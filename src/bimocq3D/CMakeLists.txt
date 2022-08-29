@@ -6,7 +6,7 @@ find_package(Boost REQUIRED COMPONENTS filesystem system)
 
 include_directories(${Boost_INCLUDE_DIRS})
 include_directories(${CUDA_INCLUDE_DIRS})
-include_directories(${CUDA_TOOLKIT_ROOT_DIR}/samples/common/inc)
+include_directories(~/Documents/cuda-samples/Common/)
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -gencode arch=compute_61,code=sm_61; -gencode arch=compute_75,code=sm_75;
         -gencode arch=compute_75,code=compute_75; -lineinfo)
 set(CUDA_SEPARABLE_COMPILATION ON)
