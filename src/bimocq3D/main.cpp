@@ -19,8 +19,6 @@ int main(int argc, char** argv) {
     float smoke_rise;
     float smoke_drop;
     Scheme sim_scheme;
-    string filepath = "../Out";
-    boost::filesystem::create_directories(filepath);
 
     std::vector<Emitter> emitter_list;
     std::vector<Boundary> boundary_list;
@@ -79,6 +77,31 @@ int main(int argc, char** argv) {
         emitter_list.push_back(e_sphere_a);
         emitter_list.push_back(e_sphere_b);
     }
+
+    if (argc > 1)
+    {
+        sim_scheme = (Scheme)atoi(argv[1]);
+    }
+
+    string filepath;
+    switch (sim_scheme)
+    {
+    case BIMOCQ:
+        filepath = "../Out/0-Bimocq";
+        break;
+    case SEMILAG:
+        filepath = "../Out/1-Semilag";
+        break;
+    case MACCORMACK:
+        filepath = "../Out/2-Maccormack";
+        break;
+    case MAC_REFLECTION:
+        filepath = "../Out/3-Mac_Reflection";
+        break;
+    default:
+        break;
+    }
+    boost::filesystem::create_directories(filepath);
 
 	auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
 	BimocqSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);

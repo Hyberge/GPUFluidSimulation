@@ -10,7 +10,7 @@ message(STATUS "${CMAKE_BUILD_TYPE} Build")
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMake)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
-        ${CMAKE_SOURCE_DIR}/build)
+        ${CMAKE_SOURCE_DIR}/build/)
 set(CMAKE_EXPORT_COMPILE_COMMANDS "ON")
 set(CMAKE_CXX_STANDARD 11)
 
@@ -80,12 +80,12 @@ set(CMAKE_CXX_FLAGS_QUICK "${CMAKE_CXX_FLAGS} -O1")
 set(CMAKE_EXE_LINKER_FLAGS_QUICK "")
 set(CMAKE_SHARED_LINKER_FLAGS_QUICK "")
 
-if(NOT CMAKE_BUILD_TYPE)
+#if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release
             CACHE STRING "Choose the type of build : Debug Release RelWithDebInfo MinSizeRel Coverage Quick."
             FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel" "Coverage" "Quick")
-endif()
+    # set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel" "Coverage" "Quick")
+#endif()
 
 find_program(MEMORYCHECK_COMMAND valgrind)
 set(MEMORYCHECK_COMMAND_OPTIONS "--trace-children=yes --leak-check=full --error-exitcode=1 --suppressions=${CMAKE_CURRENT_SOURCE_DIR}/Scripts/valgrind.supp")
