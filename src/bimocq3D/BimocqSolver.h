@@ -97,7 +97,7 @@ public:
     void setBoundary(const std::vector<Boundary> &boundaries);
     void updateBoundary(int framenum, float dt);
     void projection();
-    void semilagAdvect(float cfldt, float dt);
+    float semilagAdvect(float cfldt, float dt);
     void clearBoundary(buffer3Df field);
     float getCFL();
     void clampExtrema(float dt, buffer3Df & f_n, buffer3Df & f_np1);

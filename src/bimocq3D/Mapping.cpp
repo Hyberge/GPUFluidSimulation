@@ -4,8 +4,9 @@
 
 #include "Mapping.h"
 
-void MapperBase::updateBackward(float cfldt, float dt)
+float MapperBase::updateBackward(float cfldt, float dt)
 {
+    float time = 0.f;
     // the backward mapping will be updated in gpu.x_in, gpu.y_in, gpu.z_in
     gpuSolver->copyHostToDevice(backward_x, gpuSolver->x_host, gpuSolver->x_in, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(backward_y, gpuSolver->y_host, gpuSolver->y_in, _ni*_nj*_nk*sizeof(float));
@@ -15,27 +16,31 @@ void MapperBase::updateBackward(float cfldt, float dt)
     while (T < dt)
     {
         if (T + substep > dt) substep = dt - T;
-        gpuSolver->solveBackwardDMC(substep);
+        time += gpuSolver->solveBackwardDMC(substep);
         T += substep;
     }
     gpuSolver->copyDeviceToHost(backward_x, gpuSolver->x_host, gpuSolver->x_in);
     gpuSolver->copyDeviceToHost(backward_y, gpuSolver->y_host, gpuSolver->y_in);
     gpuSolver->copyDeviceToHost(backward_z, gpuSolver->z_host, gpuSolver->z_in);
+
+    return time;
 }
 
-void MapperBase::updateForward(float cfldt, float dt)
+float MapperBase::updateForward(float cfldt, float dt)
 {
     // the forward mapping will be updated in gpu.x_out, gpu.y_out, gpu.z_out
     gpuSolver->copyHostToDevice(forward_x, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_y, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_z, gpuSolver->z_host, gpuSolver->z_out, _ni*_nj*_nk*sizeof(float));
-    gpuSolver->solveForward(cfldt, dt);
+    float time = gpuSolver->solveForward(cfldt, dt);
     gpuSolver->copyDeviceToHost(forward_x, gpuSolver->x_host, gpuSolver->x_out);
     gpuSolver->copyDeviceToHost(forward_y, gpuSolver->y_host, gpuSolver->y_out);
     gpuSolver->copyDeviceToHost(forward_z, gpuSolver->z_host, gpuSolver->z_out);
+
+    return time;
 }
 
-void MapperBase::updateMapping(const buffer3Df &un, const buffer3Df &vn, const buffer3Df &wn, float cfldt, float dt)
+float MapperBase::updateMapping(const buffer3Df &un, const buffer3Df &vn, const buffer3Df &wn, float cfldt, float dt)
 {
     // copy velocity buffer from host to device
     gpuSolver->copyHostToDevice(un, gpuSolver->u_host, gpuSolver->u, (_ni+1)*_nj*_nk*sizeof(float));
@@ -45,11 +50,12 @@ void MapperBase::updateMapping(const buffer3Df &un, const buffer3Df &vn, const b
     // forward mapping will be stored in GPU.x_out, GPU.y_out, GPU.z_out
     // backward mapping will be stored in GPU.x_in, GPU,y_in, GPU.z_in
     // NOTE: ORDER MUST NOT CHANGE DUE TO REUSE OF GPU BUFFER
-    updateBackward(cfldt, dt);
-    updateForward(cfldt, dt);
+    float time = updateBackward(cfldt, dt);
+    time += updateForward(cfldt, dt);
+    return time;
 }
 
-void MapperBase::accumulateVelocity(buffer3Df &u_init, buffer3Df &v_init, buffer3Df &w_init,
+float MapperBase::accumulateVelocity(buffer3Df &u_init, buffer3Df &v_init, buffer3Df &w_init,
                                     const buffer3Df &u_change, const buffer3Df &v_change, const buffer3Df &w_change,
                                     float coeff)
 {
@@ -65,14 +71,16 @@ void MapperBase::accumulateVelocity(buffer3Df &u_init, buffer3Df &v_init, buffer
     gpuSolver->copyHostToDevice(v_change, gpuSolver->v_host, gpuSolver->v, _ni*(_nj+1)*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(w_change, gpuSolver->w_host, gpuSolver->w, _ni*_nj*(_nk+1)*sizeof(float));
     // now add velocity change multiply with coefficient back to initial state, which is stored in gpu.du, gpu.dv, gpu.dw
-    gpuSolver->accumulateVelocity(false, coeff);
+    float time = gpuSolver->accumulateVelocity(false, coeff);
     // copy accumulated velocity back to host buffer
     gpuSolver->copyDeviceToHost(u_init, gpuSolver->u_host, gpuSolver->du);
     gpuSolver->copyDeviceToHost(v_init, gpuSolver->v_host, gpuSolver->dv);
     gpuSolver->copyDeviceToHost(w_init, gpuSolver->w_host, gpuSolver->dw);
+
+    return time;
 }
 
-void MapperBase::accumulateField(buffer3Df &field_init, const buffer3Df &field_change)
+float MapperBase::accumulateField(buffer3Df &field_init, const buffer3Df &field_change)
 {
     gpuSolver->copyHostToDevice(forward_x, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_y, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
@@ -83,12 +91,14 @@ void MapperBase::accumulateField(buffer3Df &field_init, const buffer3Df &field_c
     // copy field change from external(e.g. source emitter) at time t to gpu.u, gpu.v, gpu.w
     gpuSolver->copyHostToDevice(field_change, gpuSolver->x_host, gpuSolver->u, (_ni+1)*_nj*_nk*sizeof(float));
     // now add field change back to initial state, which is stored in gpu.du
-    gpuSolver->accumulateField(false, 1.f);
+    float time = gpuSolver->accumulateField(false, 1.f);
     // copy accumulated field back to host buffer
     gpuSolver->copyDeviceToHost(field_init, gpuSolver->u_host, gpuSolver->du);
+
+    return time;
 }
 
-float MapperBase::estimateDistortion(const buffer3Dc &boundary)
+float MapperBase::estimateDistortion(const buffer3Dc &boundary, float& time)
 {
     gpuSolver->copyHostToDevice(forward_x, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_y, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
@@ -96,7 +106,7 @@ float MapperBase::estimateDistortion(const buffer3Dc &boundary)
     gpuSolver->copyHostToDevice(backward_x, gpuSolver->x_host, gpuSolver->x_in, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(backward_y, gpuSolver->y_host, gpuSolver->y_in, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(backward_z, gpuSolver->z_host, gpuSolver->z_in, _ni*_nj*_nk*sizeof(float));
-    gpuSolver->estimateDistortionCUDA();
+    time = gpuSolver->estimateDistortionCUDA();
     cudaMemcpy(gpuSolver->u_host, gpuSolver->du, (_ni+1)*_nj*_nk*sizeof(float), cudaMemcpyDeviceToHost);
     float max_dist = 0.f;
     for (uint i = 0; i < forward_x._nx; i++)
@@ -165,10 +175,12 @@ void MapperBase::init(uint ni, uint nj, uint nk, float h, float coeff, gpuMapper
     backward_zprev.copy(backward_z);
 }
 
-void MapperBase::advectVelocity(buffer3Df &un, buffer3Df &vn, buffer3Df &wn,
+float MapperBase::advectVelocity(buffer3Df &un, buffer3Df &vn, buffer3Df &wn,
                                 const buffer3Df &u_init, const buffer3Df &v_init, const buffer3Df &w_init,
                                 const buffer3Df &u_prev, const buffer3Df &v_prev, const buffer3Df &w_prev)
 {
+    float time = 0.f;
+
     // forward and backward mapping are already in gpu.x_out and gpu.x_in correspondingly
     gpuSolver->copyHostToDevice(forward_x, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_y, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
@@ -182,9 +194,9 @@ void MapperBase::advectVelocity(buffer3Df &un, buffer3Df &vn, buffer3Df &wn,
     gpuSolver->copyHostToDevice(v_init, gpuSolver->v_host, gpuSolver->dv, _ni*(_nj+1)*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(w_init, gpuSolver->w_host, gpuSolver->dw, _ni*_nj*(_nk+1)*sizeof(float));
     // updated velocity(no compensation) will be store in gpu.u, gpu.v, gpu.w
-    gpuSolver->advectVelocity(false);
+    time += gpuSolver->advectVelocity(false);
     // compensated and clamped velocity will be stored in gpu.u, gpu.v, gpu.w
-    gpuSolver->compensateVelocity(false);
+    time += gpuSolver->compensateVelocity(false);
     // now copy backward_prev to gpu.x_out, gpu._yout, gpu.z_out
     gpuSolver->copyHostToDevice(backward_xprev, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(backward_yprev, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
@@ -195,17 +207,21 @@ void MapperBase::advectVelocity(buffer3Df &un, buffer3Df &vn, buffer3Df &wn,
     // velocity from backward_prev will be blended with velocity from backward_curr
     // if reinitialization is not happen, prev buffers are not valid
     if (total_reinit_count != 0)
-        gpuSolver->advectVelocityDouble(false, blend_coeff);
+        time += gpuSolver->advectVelocityDouble(false, blend_coeff);
     else
-        gpuSolver->advectVelocityDouble(false, 1.f);
+        time += gpuSolver->advectVelocityDouble(false, 1.f);
     // copy velocity back to host
     gpuSolver->copyDeviceToHost(un, gpuSolver->u_host, gpuSolver->u);
     gpuSolver->copyDeviceToHost(vn, gpuSolver->v_host, gpuSolver->v);
     gpuSolver->copyDeviceToHost(wn, gpuSolver->w_host, gpuSolver->w);
+
+    return time;
 }
 
-void MapperBase::advectField(buffer3Df &field, const buffer3Df &field_init, const buffer3Df &field_prev)
+float MapperBase::advectField(buffer3Df &field, const buffer3Df &field_init, const buffer3Df &field_prev)
 {
+    float time = 0.f;
+
     gpuSolver->copyHostToDevice(forward_x, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_y, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(forward_z, gpuSolver->z_host, gpuSolver->z_out, _ni*_nj*_nk*sizeof(float));
@@ -215,9 +231,9 @@ void MapperBase::advectField(buffer3Df &field, const buffer3Df &field_init, cons
     // reuse gpu.du for other fields(e.g. density, temperature)
     gpuSolver->copyHostToDevice(field_init, gpuSolver->x_host, gpuSolver->du, (_ni+1)*_nj*_nk*sizeof(float));
     // updated field will be stored in gpu.u
-    gpuSolver->advectField(false);
+    time += gpuSolver->advectField(false);
     // compensated field will be stored in gpu.u
-    gpuSolver->compensateField(false);
+    time += gpuSolver->compensateField(false);
     // now copy backward_prev to gpu.x_out, gpu._yout, gpu.z_out
     gpuSolver->copyHostToDevice(backward_xprev, gpuSolver->x_host, gpuSolver->x_out, _ni*_nj*_nk*sizeof(float));
     gpuSolver->copyHostToDevice(backward_yprev, gpuSolver->y_host, gpuSolver->y_out, _ni*_nj*_nk*sizeof(float));
@@ -227,11 +243,13 @@ void MapperBase::advectField(buffer3Df &field, const buffer3Df &field_init, cons
     // field from backward_prev will be blended with field from backward_curr
     // if reinitialization is not happen, prev buffers are not valid
     if (total_reinit_count != 0)
-        gpuSolver->advectFieldDouble(false, blend_coeff);
+        time += gpuSolver->advectFieldDouble(false, blend_coeff);
     else
-        gpuSolver->advectFieldDouble(false, 1.f);
+        time += gpuSolver->advectFieldDouble(false, 1.f);
     // copy field back to host
     gpuSolver->copyDeviceToHost(field, gpuSolver->u_host, gpuSolver->u);
+
+    return time;
 }
 
 void MapperBase::reinitializeMapping()

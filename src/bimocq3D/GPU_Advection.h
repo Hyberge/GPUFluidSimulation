@@ -11,64 +11,64 @@
 #include "../include/fluid_buffer3D.h"
 #include <tbb/tbb.h>
 
-extern "C" void gpu_solve_forward(float *u, float *v, float *w,
+extern "C" float gpu_solve_forward(float *u, float *v, float *w,
                                   float *x_fwd, float *y_fwd, float *z_fwd,
                                   float h, int ni, int nj, int nk, float cfldt, float dt);
 
-extern "C" void gpu_solve_backwardDMC(float *u, float *v, float *w,
+extern "C" float gpu_solve_backwardDMC(float *u, float *v, float *w,
                                       float *x_in, float *y_in, float *z_in,
                                       float *x_out, float *y_out, float *z_out,
                                       float h, int ni, int nj, int nk, float substep);
 
-extern "C" void gpu_advect_velocity(float *u, float *v, float *w,
+extern "C" float gpu_advect_velocity(float *u, float *v, float *w,
                                     float *u_init, float *v_init, float *w_init,
                                     float *backward_x, float *backward_y, float *backward_z,
                                     float h, int ni, int nj, int nk, bool is_point);
 
-extern "C" void gpu_advect_vel_double(float *u, float *v, float *w,
+extern "C" float gpu_advect_vel_double(float *u, float *v, float *w,
                                       float *utemp, float *vtemp, float *wtemp,
                                       float *backward_x, float *backward_y, float *backward_z,
                                       float *backward_xprev,  float *backward_yprev, float *backward_zprev,
                                       float h, int ni, int nj, int nk, bool is_point, float blend_coeff);
 
-extern "C" void gpu_advect_field(float *field, float *field_init,
+extern "C" float gpu_advect_field(float *field, float *field_init,
                                  float *backward_x, float *backward_y, float *backward_z,
                                  float h, int ni, int nj, int nk, bool is_point);
 
-extern "C" void gpu_advect_field_double(float *field, float *field_init,
+extern "C" float gpu_advect_field_double(float *field, float *field_init,
                                         float *backward_x, float *backward_y, float *backward_z,
                                         float *backward_xprev, float *backward_yprev, float *backward_zprev,
                                         float h, int ni, int nj, int nk, bool is_point, float blend_coeff);
 
-extern "C" void gpu_accumulate_velocity(float *u_change, float *v_change, float *w_change,
+extern "C" float gpu_accumulate_velocity(float *u_change, float *v_change, float *w_change,
                                         float *du_init, float *dv_init, float *dw_init,
                                         float *forward_x, float *forward_y, float *forward_z,
                                         float h, int ni, int nj, int nk, bool is_point, float coeff);
 
-extern "C" void gpu_accumulate_field(float *field_change, float *dfield_init,
+extern "C" float gpu_accumulate_field(float *field_change, float *dfield_init,
                                      float *forward_x, float *forward_y, float *forward_z,
                                      float h, int ni, int nj, int nk, bool is_point, float coeff);
 
-extern "C" void gpu_estimate_distortion(float *du,
+extern "C" float gpu_estimate_distortion(float *du,
                                         float *x_init, float *y_init, float *z_init,
                                         float *x_fwd, float *y_fwd, float *z_fwd,
                                         float h, int ni, int nj, int nk);
 
-extern "C" void gpu_add(float *field1, float *field2, float coeff, int number);
+extern "C" float gpu_add(float *field1, float *field2, float coeff, int number);
 
-extern "C" void gpu_compensate_velocity(float *u, float *v, float *w,
+extern "C" float gpu_compensate_velocity(float *u, float *v, float *w,
                                         float *du, float *dv, float *dw,
                                         float *u_src, float *v_src, float *w_src,
                                         float *forward_x, float *forward_y, float *forward_z,
                                         float *backward_x, float *backward_y, float *backward_z,
                                         float h, int ni, int nj, int nk, bool is_point);
 
-extern "C" void gpu_compensate_field(float *u, float *du, float *u_src,
+extern "C" float gpu_compensate_field(float *u, float *du, float *u_src,
                                      float *forward_x, float *forward_y, float *forward_z,
                                      float *backward_x, float *backward_y, float *backward_z,
                                      float h, int ni, int nj, int nk, bool is_point);
 
-extern "C" void gpu_semilag(float *field, float *field_src,
+extern "C" float gpu_semilag(float *field, float *field_src,
                             float *u, float *v, float *w,
                             int dim_x, int dim_y, int dim_z,
                             float h, int ni, int nj, int nk, float cfldt, float dt);
@@ -249,97 +249,100 @@ public:
         cudaMalloc(buffer, size);
     }
 
-    void solveForward(float cfl_dt, float dt)
+    float solveForward(float cfl_dt, float dt)
     {
-        gpu_solve_forward(u, v, w, x_out, y_out, z_out, _hx, ni, nj, nk, cfl_dt, dt);
+        return gpu_solve_forward(u, v, w, x_out, y_out, z_out, _hx, ni, nj, nk, cfl_dt, dt);
     }
 
-    void solveBackwardDMC(float substep)
+    float solveBackwardDMC(float substep)
     {
         cudaMemcpy(x_out, x_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
         cudaMemcpy(y_out, y_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
         cudaMemcpy(z_out, z_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
-        gpu_solve_backwardDMC(u, v, w, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, substep);
+        float time = gpu_solve_backwardDMC(u, v, w, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, substep);
         cudaMemcpy(x_in, x_out, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
         cudaMemcpy(y_in, y_out, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
         cudaMemcpy(z_in, z_out, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
+
+        return time;
     }
 
-    void advectVelocity(bool is_point)
+    float advectVelocity(bool is_point)
     {
         cudaMemset(u, 0, sizeof(float)*(ni+1)*nj*nk);
         cudaMemset(v, 0, sizeof(float)*ni*(nj+1)*nk);
         cudaMemset(w, 0, sizeof(float)*ni*nj*(nk+1));
-        gpu_advect_velocity(u, v, w, du, dv, dw, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
+        return gpu_advect_velocity(u, v, w, du, dv, dw, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
     }
 
-    void advectVelocityDouble(bool is_point, float blend_coeff)
+    float advectVelocityDouble(bool is_point, float blend_coeff)
     {
-        gpu_advect_vel_double(u, v, w, du, dv, dw, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, blend_coeff);
+        return gpu_advect_vel_double(u, v, w, du, dv, dw, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, blend_coeff);
     }
 
-    void advectField(bool is_point)
+    float advectField(bool is_point)
     {
         cudaMemset(u, 0, sizeof(float)*(ni+1)*nj*nk);
-        gpu_advect_field(u, du, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
+        return gpu_advect_field(u, du, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
     }
 
-    void advectFieldDouble(bool is_point, float blend_coeff)
+    float advectFieldDouble(bool is_point, float blend_coeff)
     {
-        gpu_advect_field_double(u, du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, blend_coeff);
+        return gpu_advect_field_double(u, du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, blend_coeff);
     }
 
-    void accumulateVelocity(bool is_point, float coeff)
+    float accumulateVelocity(bool is_point, float coeff)
     {
-        gpu_accumulate_velocity(u, v, w, du, dv, dw, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, coeff);
+        return gpu_accumulate_velocity(u, v, w, du, dv, dw, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, coeff);
     }
 
-    void accumulateField(bool is_point, float coeff)
+    float accumulateField(bool is_point, float coeff)
     {
-        gpu_accumulate_field(u, du, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, coeff);
+        return gpu_accumulate_field(u, du, x_out, y_out, z_out, _hx, ni, nj, nk, is_point, coeff);
     }
 
-    void compensateVelocity(bool is_point)
+    float compensateVelocity(bool is_point)
     {
         // clear and reuse u_src, v_src, w_src buffers to do compensation
         cudaMemset(u_src, 0, sizeof(float)*(ni+1)*nj*nk);
         cudaMemset(v_src, 0, sizeof(float)*ni*(nj+1)*nk);
         cudaMemset(w_src, 0, sizeof(float)*ni*nj*(nk+1));
-        gpu_compensate_velocity(u, v, w, du, dv, dw, u_src, v_src, w_src, x_out, y_out, z_out, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
+        return gpu_compensate_velocity(u, v, w, du, dv, dw, u_src, v_src, w_src, x_out, y_out, z_out, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
     }
 
-    void compensateField(bool is_point)
+    float compensateField(bool is_point)
     {
         // clear and reuse u_src, buffer to do compensation
         cudaMemset(u_src, 0, sizeof(float)*(ni+1)*nj*nk);
-        gpu_compensate_field(u, du, u_src, x_out, y_out, z_out, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
+        return gpu_compensate_field(u, du, u_src, x_out, y_out, z_out, x_in, y_in, z_in, _hx, ni, nj, nk, is_point);
     }
 
-    void semilagAdvectVelocity(float cfldt, float dt)
+    float semilagAdvectVelocity(float cfldt, float dt)
     {
         cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
         cudaMemset(dv, 0, sizeof(float)*ni*(nj+1)*nk);
         cudaMemset(dw, 0, sizeof(float)*ni*nj*(nk+1));
-        gpu_semilag(du, u_src, u, v, w, 1, 0, 0, _hx, ni, nj, nk, cfldt, dt);
-        gpu_semilag(dv, v_src, u, v, w, 0, 1, 0, _hx, ni, nj, nk, cfldt, dt);
-        gpu_semilag(dw, w_src, u, v, w, 0, 0, 1, _hx, ni, nj, nk, cfldt, dt);
+        float time = gpu_semilag(du, u_src, u, v, w, 1, 0, 0, _hx, ni, nj, nk, cfldt, dt);
+        time = gpu_semilag(dv, v_src, u, v, w, 0, 1, 0, _hx, ni, nj, nk, cfldt, dt);
+        time = gpu_semilag(dw, w_src, u, v, w, 0, 0, 1, _hx, ni, nj, nk, cfldt, dt);
+        return time;
     }
 
-    void semilagAdvectField(float cfldt, float dt)
+    float semilagAdvectField(float cfldt, float dt)
     {
         cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
-        gpu_semilag(du, dv, u, v, w, 0, 0, 0, _hx, ni, nj, nk, cfldt, dt);
+        return gpu_semilag(du, dv, u, v, w, 0, 0, 0, _hx, ni, nj, nk, cfldt, dt);
     }
 
-    void add(float *field1, float *field2, float coeff, int number)
+    float add(float *field1, float *field2, float coeff, int number)
     {
-        gpu_add(field1, field2, coeff, number);
+        return gpu_add(field1, field2, coeff, number);
     }
 
-    void estimateDistortionCUDA()
+    float estimateDistortionCUDA()
     {
         cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
-        gpu_estimate_distortion(du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk);
+        return gpu_estimate_distortion(du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk);
     }
 };
 

@@ -80,6 +80,9 @@ void BimocqSolver::advance(int framenum, float dt)
 
 void BimocqSolver::advanceBimocq(int framenum, float dt)
 {
+    float time = 0;
+    float totalTime = 0;
+
     float proj_coeff = 2.f;
     bool velReinit = false;
     bool scalarReinit = false;
@@ -87,17 +90,20 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
     if (framenum == 0) max_v = _h;
     cout << YELLOW << "[ CFL number is: " << max_v*dt/_h << " ] " << RESET << endl;
 
-    VelocityAdvector.updateMapping(_un, _vn, _wn, cfldt, dt);
-    ScalarAdvector.updateMapping(_un, _vn, _wn, cfldt, dt);
-    cout << "[ Update Mapping Done! ]" << endl;
+    time = VelocityAdvector.updateMapping(_un, _vn, _wn, cfldt, dt);
+    time += ScalarAdvector.updateMapping(_un, _vn, _wn, cfldt, dt);
+    totalTime = time;
+    cout << "[ Update Mapping Done with GPU time: " << time << "ms ]" << endl;
 
-    semilagAdvect(cfldt, dt);
-    cout << "[ Semilag Advect Fields Done! ]" << endl;
+    time = semilagAdvect(cfldt, dt);
+    totalTime += time;
+    cout << "[ Semilag Advect Fields Done with GPU time: " << time << "ms ]"  << endl;
 
-    VelocityAdvector.advectVelocity(_un, _vn, _wn, _uinit, _vinit, _winit, _uprev, _vprev, _wprev);
-    ScalarAdvector.advectField(_rho, _rhoinit, _rhoprev);
-    ScalarAdvector.advectField(_T, _Tinit, _Tprev);
-    cout << "[ Bimocq Advect Fields Done! ]" << endl;
+    time = VelocityAdvector.advectVelocity(_un, _vn, _wn, _uinit, _vinit, _winit, _uprev, _vprev, _wprev);
+    time += ScalarAdvector.advectField(_rho, _rhoinit, _rhoprev);
+    time += ScalarAdvector.advectField(_T, _Tinit, _Tprev);
+    totalTime += time;
+    cout << "[ Bimocq Advect Fields Done with GPU time: " << time << "ms ]" << endl;
 
     blendBoundary(_un, _utemp);
     blendBoundary(_vn, _vtemp);
@@ -141,10 +147,12 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
     _drhoextern.copy(_rho); _drhoextern -= _rhotemp;
     _dTextern.copy(_T); _dTextern -= _Ttemp;
 
-    float VelocityDistortion = VelocityAdvector.estimateDistortion(_b_desc) / (max_v * dt);
-    float ScalarDistortion = ScalarAdvector.estimateDistortion(_b_desc) / (max_v * dt);
-    cout << "[ Velocity Distortion is " << VelocityDistortion << " ]" << endl;
-    cout << "[ Scalar Distortion is " << ScalarDistortion << " ]" << endl;
+    float VelocityDistortion = VelocityAdvector.estimateDistortion(_b_desc, time) / (max_v * dt);
+    totalTime += time;
+    cout << "[ Velocity Distortion is " << VelocityDistortion << ", Distortion GPU time: " << time << "ms ]" << endl;
+    float ScalarDistortion = ScalarAdvector.estimateDistortion(_b_desc, time) / (max_v * dt);
+    totalTime += time;
+    cout << "[ Scalar Distortion is " << ScalarDistortion << ", Distortion GPU time: " << time << "ms ]" << endl;
     if (VelocityDistortion > 1.f || framenum - vel_lastReinit > 10)
     {
         velReinit = true;
@@ -157,18 +165,19 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
         scalar_lastReinit = framenum;
     }
     // accumuate buffer changes
-    VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duextern, _dvextern, _dwextern, 1.f);
-    VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duproj, _dvproj, _dwproj, proj_coeff);
-    ScalarAdvector.accumulateField(_rhoinit, _drhoextern);
-    ScalarAdvector.accumulateField(_Tinit, _dTextern);
+    time = VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duextern, _dvextern, _dwextern, 1.f);
+    time += VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duproj, _dvproj, _dwproj, proj_coeff);
+    time += ScalarAdvector.accumulateField(_rhoinit, _drhoextern);
+    time += ScalarAdvector.accumulateField(_Tinit, _dTextern);
 
-    cout << "[ Accumulate Fields Done! ]" << endl;
-    if (velReinit)
+    totalTime += time;
+    cout << "[ Accumulate Fields Done with GPU time: " << time << "ms ]" << endl;
     {
         VelocityAdvector.reinitializeMapping();
         velocityReinitialize();
-        VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duproj, _dvproj, _dwproj, 1.f);
-        cout << RED << "[ Bimocq Velocity Re-initialize, total reinitialize count: " << VelocityAdvector.total_reinit_count << " ]" << RESET << endl;
+        time = VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duproj, _dvproj, _dwproj, 1.f);
+        totalTime += time;
+        cout << RED << "[ Bimocq Velocity Re-initialize, total reinitialize count: " << VelocityAdvector.total_reinit_count << ", Distortion GPU time: " << time << "ms ]" << RESET << endl;
     }
     if (scalarReinit)
     {
@@ -176,6 +185,8 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
         scalarReinitialize();
         cout << RED << "[ Bimocq Scalar Re-initialize, total reinitialize count: " << ScalarAdvector.total_reinit_count << " ]" << RESET << endl;
     }
+
+    cout << "[Bimocq Total GPU Time: " << totalTime << "ms ]";
 }
 
 void BimocqSolver::advanceSemilag(int framenum, float dt)
@@ -564,15 +575,16 @@ void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
     });
 }
 
-void BimocqSolver::semilagAdvect(float cfldt, float dt)
+float BimocqSolver::semilagAdvect(float cfldt, float dt)
 {
+    float time = 0.f;
     // NOTE: TO SAVE TRANSFER TIME, NEED U,V,W BE STORED IN GPU.U, GPU.V, GPU.W ALREADY
     // semi-lagrangian advected velocity will be stored in gpu.du, gpu.dv, gpu.dw
     // negate dt for tracing back
     cudaMemcpy(gpuSolver->u_src, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->v_src, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->w_src, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float), cudaMemcpyDeviceToDevice);
-    gpuSolver->semilagAdvectVelocity(cfldt, -dt);
+    time = gpuSolver->semilagAdvectVelocity(cfldt, -dt);
     gpuSolver->copyDeviceToHost(_utemp, gpuSolver->u_host, gpuSolver->du);
     gpuSolver->copyDeviceToHost(_vtemp, gpuSolver->v_host, gpuSolver->dv);
     gpuSolver->copyDeviceToHost(_wtemp, gpuSolver->w_host, gpuSolver->dw);
@@ -581,12 +593,14 @@ void BimocqSolver::semilagAdvect(float cfldt, float dt)
     // copy field to gpu.dv for semi-lagrangian advection
     // advect density
     gpuSolver->copyHostToDevice(_rho, gpuSolver->x_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
-    gpuSolver->semilagAdvectField(cfldt, -dt);
+    time += gpuSolver->semilagAdvectField(cfldt, -dt);
     gpuSolver->copyDeviceToHost(_rhotemp, gpuSolver->x_host, gpuSolver->du);
     // advect Temperature
     gpuSolver->copyHostToDevice(_T, gpuSolver->x_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
-    gpuSolver->semilagAdvectField(cfldt, -dt);
+    time += gpuSolver->semilagAdvectField(cfldt, -dt);
     gpuSolver->copyDeviceToHost(_Ttemp, gpuSolver->x_host, gpuSolver->du);
+
+    return time;
 }
 
 void BimocqSolver::emitSmoke(int framenum, float dt)
