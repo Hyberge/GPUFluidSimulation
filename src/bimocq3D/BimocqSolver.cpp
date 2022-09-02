@@ -325,6 +325,8 @@ void BimocqSolver::advanceMacCormack(int framenum, float dt)
 
 void BimocqSolver::advanceReflection(int framenum, float dt)
 {
+    float time = 0.f, totalTime = 0.f;
+
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
@@ -335,33 +337,35 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     float cfldt = getCFL();
     cout << YELLOW << "[ CFL number is: " << max_v*dt/_h << " ] " << RESET << endl;
     gpuSolver->copyHostToDevice(_rho, gpuSolver->x_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
-    gpuSolver->semilagAdvectField(cfldt, -dt);
+    time = gpuSolver->semilagAdvectField(cfldt, -dt);
     cudaMemcpy(gpuSolver->dv, gpuSolver->du, sizeof(float)*_nx*_ny*_nz, cudaMemcpyDeviceToDevice);
-    gpuSolver->semilagAdvectField(cfldt, dt);
-    gpuSolver->add(gpuSolver->dv, gpuSolver->du, -0.5f, _nx*_ny*_nz);
+    time += gpuSolver->semilagAdvectField(cfldt, dt);
+    time += gpuSolver->add(gpuSolver->dv, gpuSolver->du, -0.5f, _nx*_ny*_nz);
     gpuSolver->copyHostToDevice(_rho, gpuSolver->x_host, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float));
-    gpuSolver->add(gpuSolver->dv, gpuSolver->du, 0.5f, _nx*_ny*_nz);
+    time += gpuSolver->add(gpuSolver->dv, gpuSolver->du, 0.5f, _nx*_ny*_nz);
     // update rho
     gpuSolver->copyDeviceToHost(_rhotemp, gpuSolver->x_host, gpuSolver->dv);
     // clamp extrema, clamped new density will be in GPU.dv
     clampExtrema(dt, _rho, _rhotemp);
     _rho.copy(_rhotemp);
-    cout << "[ Reflection Advect Density Done! ]" << endl;
+    totalTime += time;
+    cout << "[ Reflection Advect Density Done wit GPU time: " << time <<" ]" << endl;
 
     // advect Temperature
     gpuSolver->copyHostToDevice(_T, gpuSolver->x_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
-    gpuSolver->semilagAdvectField(cfldt, -dt);
+    time = gpuSolver->semilagAdvectField(cfldt, -dt);
     cudaMemcpy(gpuSolver->dv, gpuSolver->du, sizeof(float)*_nx*_ny*_nz, cudaMemcpyDeviceToDevice);
-    gpuSolver->semilagAdvectField(cfldt, dt);
-    gpuSolver->add(gpuSolver->dv, gpuSolver->du, -0.5f, _nx*_ny*_nz);
+    time += gpuSolver->semilagAdvectField(cfldt, dt);
+    time += gpuSolver->add(gpuSolver->dv, gpuSolver->du, -0.5f, _nx*_ny*_nz);
     gpuSolver->copyHostToDevice(_T, gpuSolver->x_host, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float));
-    gpuSolver->add(gpuSolver->dv, gpuSolver->du, 0.5f, _nx*_ny*_nz);
+    time += gpuSolver->add(gpuSolver->dv, gpuSolver->du, 0.5f, _nx*_ny*_nz);
     // update temperature
     gpuSolver->copyDeviceToHost(_Ttemp, gpuSolver->x_host, gpuSolver->dv);
     // clamp extrema, clamped new temperature will be in GPU.dv
     clampExtrema(dt, _T, _Ttemp);
     _T.copy(_Ttemp);
-    cout << "[ Reflection Advect Temperature Done! ]" << endl;
+    totalTime += time;
+    cout << "[ Reflection Advect Temperature Done wit GPU time: " << time <<" ]" << endl;
 
     clearBoundary(_rho);
 
@@ -370,17 +374,17 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     cudaMemcpy(gpuSolver->u_src, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->v_src, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->w_src, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float), cudaMemcpyDeviceToDevice);
-    gpuSolver->semilagAdvectVelocity(cfldt, -0.5f*dt);
+    time = gpuSolver->semilagAdvectVelocity(cfldt, -0.5f*dt);
     cudaMemcpy(gpuSolver->u_src, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->v_src, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->w_src, gpuSolver->dw, _nx*_ny*(_nz+1)*sizeof(float), cudaMemcpyDeviceToDevice);
-    gpuSolver->semilagAdvectVelocity(cfldt, 0.5f*dt);
-    gpuSolver->add(gpuSolver->u_src, gpuSolver->du, -0.5f, (_nx+1)*_ny*_nz);
-    gpuSolver->add(gpuSolver->v_src, gpuSolver->dv, -0.5f, _nx*(_ny+1)*_nz);
-    gpuSolver->add(gpuSolver->w_src, gpuSolver->dw, -0.5f, _nx*_ny*(_nz+1));
-    gpuSolver->add(gpuSolver->u_src, gpuSolver->u, 0.5f, (_nx+1)*_ny*_nz);
-    gpuSolver->add(gpuSolver->v_src, gpuSolver->v, 0.5f, _nx*(_ny+1)*_nz);
-    gpuSolver->add(gpuSolver->w_src, gpuSolver->w, 0.5f, _nx*_ny*(_nz+1));
+    time += gpuSolver->semilagAdvectVelocity(cfldt, 0.5f*dt);
+    time += gpuSolver->add(gpuSolver->u_src, gpuSolver->du, -0.5f, (_nx+1)*_ny*_nz);
+    time += gpuSolver->add(gpuSolver->v_src, gpuSolver->dv, -0.5f, _nx*(_ny+1)*_nz);
+    time += gpuSolver->add(gpuSolver->w_src, gpuSolver->dw, -0.5f, _nx*_ny*(_nz+1));
+    time += gpuSolver->add(gpuSolver->u_src, gpuSolver->u, 0.5f, (_nx+1)*_ny*_nz);
+    time += gpuSolver->add(gpuSolver->v_src, gpuSolver->v, 0.5f, _nx*(_ny+1)*_nz);
+    time += gpuSolver->add(gpuSolver->w_src, gpuSolver->w, 0.5f, _nx*_ny*(_nz+1));
     // copy velocity back to CPU buffers
     gpuSolver->copyDeviceToHost(_utemp, gpuSolver->u_host, gpuSolver->u_src);
     gpuSolver->copyDeviceToHost(_vtemp, gpuSolver->v_host, gpuSolver->v_src);
@@ -392,7 +396,8 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     _un.copy(_utemp);
     _vn.copy(_vtemp);
     _wn.copy(_wtemp);
-    cout << "[ Reflection Advect Velocity First Half Done! ]" << endl;
+    totalTime += time;
+    cout << "[ Reflection Advect Velocity First Half Done wit GPU time: " << time <<" ]" << endl;
 
     emitSmoke(framenum, dt);
     addBuoyancy(0.5f*dt);
@@ -425,20 +430,20 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     gpuSolver->copyHostToDevice(_duproj, gpuSolver->u_host, gpuSolver->u_src, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_dvproj, gpuSolver->v_host, gpuSolver->v_src, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_dwproj, gpuSolver->w_host, gpuSolver->w_src, _nx*_ny*(_nz+1)*sizeof(float));
-    gpuSolver->semilagAdvectVelocity(cfldt, -0.5f*dt);
+    time = gpuSolver->semilagAdvectVelocity(cfldt, -0.5f*dt);
     cudaMemcpy(gpuSolver->u_src, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->v_src, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpy(gpuSolver->w_src, gpuSolver->dw, _nx*_ny*(_nz+1)*sizeof(float), cudaMemcpyDeviceToDevice);
-    gpuSolver->semilagAdvectVelocity(cfldt, 0.5f*dt);
-    gpuSolver->add(gpuSolver->u_src, gpuSolver->du, -0.5f, (_nx+1)*_ny*_nz);
-    gpuSolver->add(gpuSolver->v_src, gpuSolver->dv, -0.5f, _nx*(_ny+1)*_nz);
-    gpuSolver->add(gpuSolver->w_src, gpuSolver->dw, -0.5f, _nx*_ny*(_nz+1));
+    time += gpuSolver->semilagAdvectVelocity(cfldt, 0.5f*dt);
+    time += gpuSolver->add(gpuSolver->u_src, gpuSolver->du, -0.5f, (_nx+1)*_ny*_nz);
+    time += gpuSolver->add(gpuSolver->v_src, gpuSolver->dv, -0.5f, _nx*(_ny+1)*_nz);
+    time += gpuSolver->add(gpuSolver->w_src, gpuSolver->dw, -0.5f, _nx*_ny*(_nz+1));
     gpuSolver->copyHostToDevice(_duproj, gpuSolver->u_host, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_dvproj, gpuSolver->v_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_dwproj, gpuSolver->w_host, gpuSolver->dw, _nx*_ny*(_nz+1)*sizeof(float));
-    gpuSolver->add(gpuSolver->u_src, gpuSolver->du, 0.5f, (_nx+1)*_ny*_nz);
-    gpuSolver->add(gpuSolver->v_src, gpuSolver->dv, 0.5f, _nx*(_ny+1)*_nz);
-    gpuSolver->add(gpuSolver->w_src, gpuSolver->dw, 0.5f, _nx*_ny*(_nz+1));
+    time += gpuSolver->add(gpuSolver->u_src, gpuSolver->du, 0.5f, (_nx+1)*_ny*_nz);
+    time += gpuSolver->add(gpuSolver->v_src, gpuSolver->dv, 0.5f, _nx*(_ny+1)*_nz);
+    time += gpuSolver->add(gpuSolver->w_src, gpuSolver->dw, 0.5f, _nx*_ny*(_nz+1));
     // copy velocity back to CPU buffers
     gpuSolver->copyDeviceToHost(_utemp, gpuSolver->u_host, gpuSolver->u_src);
     gpuSolver->copyDeviceToHost(_vtemp, gpuSolver->v_host, gpuSolver->v_src);
@@ -450,7 +455,8 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     _un.copy(_utemp);
     _vn.copy(_vtemp);
     _wn.copy(_wtemp);
-    cout << "[ Reflection Advect Velocity Second Half Done! ]" << endl;
+    totalTime += time;
+    cout << "[ Reflection Advect Velocity Second Half Done wit GPU time: " << time <<" ]" << endl;
 
     addBuoyancy(0.5f*dt);
 
@@ -463,6 +469,8 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     }
 
     projection();
+
+    cout << "[Mac_Reflection Total GPU Time: " << totalTime << "ms ]";
 }
 
 void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
