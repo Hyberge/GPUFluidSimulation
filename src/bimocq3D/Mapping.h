@@ -44,4 +44,34 @@ public:
     gpuMapper *gpuSolver;
 };
 
+class MapperBaseGPU
+{
+public:
+    MapperBaseGPU() = default;
+    ~MapperBaseGPU() = default;
+
+    void init(uint ni, uint nj, uint nk, float h, float coeff, VirtualGpuMapper *mymapper);
+
+    float updateForward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt);
+    float updateBackward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt);
+    float updateMapping(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt);
+
+    float advectVelocity(float *velocityU, float *velocityV, float *velocityW,
+                        float *velocityUInit, float *velocityVInit, float *velocityWInit,
+                        float *velocityUPrev, float *velocityVPrev, float *velocityWPrev,
+                        float *SrcU, float* SrcV, float* SrcW);
+    float advectField(float *field, float *fieldInit, float *fieldPrev, float *SrcU);
+
+private:
+    uint   CellNumberX, CellNumberY, CellNumberZ;
+    float  CellSize;
+    float  BlendCoeff;      // phi_t = blend_coeff * phi_curr + (1 - blend_coeff) * phi_prev
+    uint   TotalReinitCount;
+    float *ForwardX = nullptr, *ForwardY = nullptr, *ForwardZ = nullptr;
+    float *BackwardX = nullptr, *BackwardY = nullptr, *BackwardZ = nullptr;
+    float *BackwardXPrev = nullptr, *BackwardYPrev = nullptr, *BackwardZPrev = nullptr;
+
+    VirtualGpuMapper *GpuSolver;
+};
+
 #endif //BIMOCQ_MAPPING_H

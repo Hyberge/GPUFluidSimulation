@@ -286,3 +286,141 @@ void MapperBase::reinitializeMapping()
         }
     });
 }
+
+/*
+    class MapperBaseGPU.
+*/
+void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, VirtualGpuMapper *mymapper)
+{
+    CellNumberX = ni;
+    CellNumberY = nj;
+    CellNumberZ = nk;
+    CellSize = h;
+    BlendCoeff = coeff;
+    TotalReinitCount = 0;
+
+    GpuSolver = mymapper;
+
+    uint BufferSize = CellNumberX * CellNumberY * CellNumberZ * sizeof(float);
+    GpuSolver->allocGPUBuffer((void**)&ForwardX, BufferSize);
+    GpuSolver->allocGPUBuffer((void**)&ForwardY, BufferSize);
+    GpuSolver->allocGPUBuffer((void**)&ForwardZ, BufferSize);
+
+    GpuSolver->allocGPUBuffer((void**)&BackwardX, BufferSize);
+    GpuSolver->allocGPUBuffer((void**)&BackwardY, BufferSize);
+    GpuSolver->allocGPUBuffer((void**)&BackwardZ, BufferSize);
+
+    GpuSolver->allocGPUBuffer((void**)&BackwardXPrev, BufferSize);
+    GpuSolver->allocGPUBuffer((void**)&BackwardYPrev, BufferSize);
+    GpuSolver->allocGPUBuffer((void**)&BackwardZPrev, BufferSize);
+
+    float* TempX = new float[BufferSize];
+    float* TempY = new float[BufferSize];
+    float* TempZ = new float[BufferSize];
+    tbb::parallel_for(0, (int)CellNumberZ, 1, [&](int thread_idx) {
+
+        int k = thread_idx;
+        for (size_t j = 0; j < CellNumberY; j++)
+        {
+            for (size_t i = 0; i < CellNumberX; i++)
+            {
+                uint BufferIndex = i + j * CellNumberX + k * CellNumberY * CellNumberX;
+                TempX[BufferIndex] = i * CellSize;
+                TempY[BufferIndex] = j * CellSize;
+                TempZ[BufferIndex] = k * CellSize;
+            }
+        }
+         
+    });
+
+    GpuSolver->copyHostToDevice(TempX, ForwardX, BufferSize);
+    GpuSolver->copyHostToDevice(TempY, ForwardY, BufferSize);
+    GpuSolver->copyHostToDevice(TempZ, ForwardZ, BufferSize);
+
+    GpuSolver->copyDeviceToDevice(ForwardX, BackwardX, BufferSize);
+    GpuSolver->copyDeviceToDevice(ForwardY, BackwardY, BufferSize);
+    GpuSolver->copyDeviceToDevice(ForwardZ, BackwardZ, BufferSize);
+
+    GpuSolver->copyDeviceToDevice(ForwardX, BackwardXPrev, BufferSize);
+    GpuSolver->copyDeviceToDevice(ForwardY, BackwardYPrev, BufferSize);
+    GpuSolver->copyDeviceToDevice(ForwardZ, BackwardZPrev, BufferSize);
+}
+
+float MapperBaseGPU::updateMapping(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt)
+{
+    uint BufferSize = CellNumberX * CellNumberY * CellNumberZ * sizeof(float);
+    GpuSolver->copyDeviceToDevice(BackwardXPrev, BackwardX, BufferSize);
+    GpuSolver->copyDeviceToDevice(BackwardYPrev, BackwardY, BufferSize);
+    GpuSolver->copyDeviceToDevice(BackwardZPrev, BackwardZ, BufferSize);
+
+    float time = updateBackward(velocityU, velocityV, velocityW, cfldt, dt);
+
+    time += updateForward(velocityU, velocityV, velocityW, cfldt, dt);
+
+    return time;
+}
+
+float MapperBaseGPU::updateBackward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt)
+{
+    float time = 0.f;
+    float T = 0.f;
+    float substep = cfldt;
+    while (T < dt)
+    {
+        if (T + substep > dt)
+        {
+            substep = dt - T;
+        }
+        time += GpuSolver->solveBackwardDMC(velocityU, velocityV, velocityW, BackwardXPrev, BackwardYPrev, BackwardZPrev, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, substep);
+    }
+    
+    return time;
+}
+
+float MapperBaseGPU::updateForward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt)
+{
+    return GpuSolver->solveForward(velocityU, velocityV, velocityW, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+}
+
+float MapperBaseGPU::advectVelocity(float *velocityU, float *velocityV, float *velocityW,
+                        float *velocityUInit, float *velocityVInit, float *velocityWInit,
+                        float *velocityUPrev, float *velocityVPrev, float *velocityWPrev,
+                        float *SrcU, float* SrcV, float* SrcW)
+{
+    float time = 0.f;
+
+    time += GpuSolver->advectVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+
+    time += GpuSolver->compensateVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, SrcU, SrcV, SrcW, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+
+    if (TotalReinitCount != 0)
+    {
+        time += GpuSolver->advectVelocityDouble(velocityU, velocityV, velocityW, velocityUPrev, velocityVPrev, velocityWPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, BlendCoeff);
+    }
+    else
+    {
+        time += GpuSolver->advectVelocityDouble(velocityU, velocityV, velocityW, velocityUPrev, velocityVPrev, velocityWPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.f);
+    }
+    
+    return time;
+}
+
+float MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev, float *SrcU)
+{
+    float time = 0.f;
+
+    time += GpuSolver->advectField(field, fieldInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+
+    time += GpuSolver->compensateField(field, fieldInit, SrcU, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+
+    if (TotalReinitCount != 0)
+    {
+        time += GpuSolver->advectFieldDouble(field, fieldPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, BlendCoeff);
+    }
+    else
+    {
+        time += GpuSolver->advectFieldDouble(field, fieldPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.f);
+    }
+    
+    return time;
+}
