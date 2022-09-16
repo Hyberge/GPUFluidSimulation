@@ -32,6 +32,8 @@ public:
 
     float getCFL();
 
+    void emitSmoke(int framenum, float dt);
+
     // smoke parameter
     float _alpha;
     float _beta;

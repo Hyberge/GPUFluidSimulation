@@ -73,6 +73,10 @@ extern "C" float gpu_semilag(float *field, float *field_src,
                             int dim_x, int dim_y, int dim_z,
                             float h, int ni, int nj, int nk, float cfldt, float dt);
 
+extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float *T,
+                            float h, int ni, int nj, int nk, 
+                            float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter);
+
 class gpuMapper{
 public:
     gpuMapper(){}
@@ -344,6 +348,13 @@ public:
         cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
         return gpu_estimate_distortion(du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk);
     }
+
+    float emitSmoke(float *u, float *v, float *w, float *rho, float *T,
+                    float h, int ni, int nj, int nk, 
+                    float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
+    {
+        return gpu_emit_smoke(u, v, w, rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature, emiter);
+    }
 };
 
 class VirtualGpuMapper
@@ -483,6 +494,13 @@ public:
     {
         cudaMemset(field, 0, sizeof(float)*(ni+1)*nj*nk);
         return gpu_semilag(field, field_src, u, v, w, dim_x, dim_y, dim_z, h, ni, nj, nk, cfldt, dt);
+    }
+
+    float emitSmoke(float *u, float *v, float *w, float *rho, float *T,
+                    float h, int ni, int nj, int nk, 
+                    float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
+    {
+        return gpu_emit_smoke(u, v, w, rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature, emiter);
     }
 };
 

@@ -36,14 +36,15 @@ inline void writeVDB(uint frame, std::string filepath, float voxel_size, const b
     openvdb::FloatGrid::Accessor accessor = grid->getAccessor();
     int total = 0;
     for(uint k=0; k<field._nz; k++) for(uint j=0; j<field._ny; j++) for(uint i=0; i<field._nx; i++)
-            {
-                if(field(i,j,k) > 1e-4)
-                {
-                    openvdb::math::Coord xyz(i,j,k);
-                    accessor.setValue(xyz, field(i,j,k));
-                    total += 1;
-                }
-            }
+    {
+        float value = std::abs(field(i,j,k));
+        if(value > 1e-4)
+        {
+            openvdb::math::Coord xyz(i,j,k);
+            accessor.setValue(xyz, value);
+            total += 1;
+        }
+    }
     char file_name[256];
     std::cout << "[ Valid vdb voxel: " << total << " ] "<< std::endl << std::endl;
     sprintf(file_name,"%s/density_render_%04d.vdb", filepath.c_str(), frame);

@@ -186,7 +186,7 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
         cout << RED << "[ Bimocq Scalar Re-initialize, total reinitialize count: " << ScalarAdvector.total_reinit_count << " ]" << RESET << endl;
     }
 
-    cout << "[Bimocq Total GPU Time: " << totalTime << "ms ]";
+    cout << "[Bimocq Total GPU Time: " << totalTime << "ms ]" << endl;
 }
 
 void BimocqSolver::advanceSemilag(int framenum, float dt)
@@ -613,6 +613,30 @@ float BimocqSolver::semilagAdvect(float cfldt, float dt)
 
 void BimocqSolver::emitSmoke(int framenum, float dt)
 {
+#if 1
+    sim_emitter[0].update(framenum, _h, dt);
+    sim_emitter[1].update(framenum, _h, dt);
+    if (framenum < sim_emitter[0].emitFrame)
+    {
+        gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
+        gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
+        gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
+        gpuSolver->copyHostToDevice(_rho, gpuSolver->x_host, gpuSolver->du, _nx*(_ny+1)*_nz*sizeof(float));
+        gpuSolver->copyHostToDevice(_T, gpuSolver->y_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
+
+        gpuSolver->emitSmoke(gpuSolver->u, gpuSolver->v, gpuSolver->w, gpuSolver->du, gpuSolver->dv, _h, _nx, _ny, _nz,
+            0.04f, 0.2f, 0.2f, 0.015f, sim_emitter[0].emit_density, sim_emitter[0].emit_temperature, 1.f);
+
+        gpuSolver->emitSmoke(gpuSolver->u, gpuSolver->v, gpuSolver->w, gpuSolver->du, gpuSolver->dv, _h, _nx, _ny, _nz,
+            0.16f, 0.201f, 0.2f, 0.015f, sim_emitter[1].emit_density, sim_emitter[1].emit_temperature, -1.f);
+
+        gpuSolver->copyDeviceToHost(_un, gpuSolver->u_host, gpuSolver->u);
+        gpuSolver->copyDeviceToHost(_vn, gpuSolver->v_host, gpuSolver->v);
+        gpuSolver->copyDeviceToHost(_wn, gpuSolver->w_host, gpuSolver->w);
+        gpuSolver->copyDeviceToHost(_rho, gpuSolver->x_host, gpuSolver->du);
+        gpuSolver->copyDeviceToHost(_T, gpuSolver->y_host, gpuSolver->dv);
+    }
+#else
     for(auto &emitter : sim_emitter)
     {
         emitter.update(framenum, _h, dt);
@@ -731,6 +755,7 @@ void BimocqSolver::emitSmoke(int framenum, float dt)
             });
         }
     }
+#endif
 }
 
 void BimocqSolver::addBuoyancy(float dt)
@@ -1283,7 +1308,7 @@ void BimocqSolver::projection()
 
 void BimocqSolver::outputResult(uint frame, string filepath)
 {
-    writeVDB(frame, filepath, _h, _rho);
+    writeVDB(frame + 1, filepath, _h, _rho);
     int boundary_index = 0;
     for (auto &b : sim_boundary)
     {

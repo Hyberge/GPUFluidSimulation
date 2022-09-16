@@ -940,3 +940,87 @@ extern "C" float gpu_add(float *field1, float *field2, float coeff, int number)
 
     return kernelTime;
 }
+
+__global__ void emit_smoke_velocity_kernel(float *field,
+                            float h, int ni, int nj, int nk, 
+                            float centerX, float centerY, float centerZ, float radius, float emiter)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i > 1 && i<ni-2 && j > 1 && j<nj-2 && k > 1 && k<nk-2)
+    {
+        float3 dir = make_float3(((float)i - 0.5) * h - centerX, j * h - centerY, k * h - centerZ);
+        
+        float length = norm3df(dir.x, dir.y ,dir.z);
+        if (length < radius)
+        {
+            float theta = acosf(dir.y / hypotf(dir.y, dir.z));
+
+            float vel_x = emiter * 0.06 *(1.0 + 0.01*cosf(8.0*theta));
+            field[index] = vel_x;
+        }
+    }
+    __syncthreads();
+}
+
+__global__ void emit_smoke_field_kernel(float *rho, float *T,
+                            float h, int ni, int nj, int nk, 
+                            float centerX, float centerY, float centerZ, float radius, float density, float temperature)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i > 1 && i<ni-2 && j > 1 && j<nj-2 && k > 1 && k<nk-2)
+    {
+        float3 dir = make_float3(i * h - centerX, j * h - centerY, k * h - centerZ);
+        
+        float length = norm3df(dir.x, dir.y ,dir.z);
+        if (length < radius)
+        {
+            rho[index] = density;
+            T[index] = temperature;
+        }
+    }
+    __syncthreads();
+}
+
+extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float *T,
+                            float h, int ni, int nj, int nk, 
+                            float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
+{
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, 0);
+
+    int blocksize = 256;
+    int number = (ni+1) * nj * nk;
+    int numBlocks = (number + 255)/256;
+    emit_smoke_velocity_kernel<<<numBlocks, blocksize>>>(u, h, ni+1, nj, nk, centerX, centerY, centerZ, radius, emiter);
+
+    number = ni * (nj + 1) * nk;
+    numBlocks = (number + 255)/256;
+    emit_smoke_velocity_kernel<<<numBlocks, blocksize>>>(v, h, ni, nj+1, nk, centerX, centerY, centerZ, radius, 0);
+
+    number = ni * nj * (nk+1);
+    numBlocks = (number + 255)/256;
+    emit_smoke_velocity_kernel<<<numBlocks, blocksize>>>(w, h, ni, nj, nk+1, centerX, centerY, centerZ, radius, 0);
+
+    number = ni * nj * nk;
+    numBlocks = (number + 255)/256;
+    emit_smoke_field_kernel<<<numBlocks, blocksize>>>(rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature);
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+
+    float kernelTime;
+    cudaEventElapsedTime(&kernelTime, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return kernelTime;
+}
