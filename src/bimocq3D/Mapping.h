@@ -62,6 +62,8 @@ public:
                         float *SrcU, float* SrcV, float* SrcW);
     float advectField(float *field, float *fieldInit, float *fieldPrev, float *SrcU);
 
+    float estimateDistortion(const buffer3Dc &boundary, float& time);
+
 private:
     uint   CellNumberX, CellNumberY, CellNumberZ;
     float  CellSize;

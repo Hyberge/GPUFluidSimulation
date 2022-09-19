@@ -34,6 +34,10 @@ public:
 
     void emitSmoke(int framenum, float dt);
 
+    void addBuoyancy(float dt);
+
+    void initBoundary();
+
     // smoke parameter
     float _alpha;
     float _beta;
@@ -58,6 +62,8 @@ public:
 
     float* Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr;
     float* Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr;
+
+    float* boundaryDesc = nullptr;
 
     VirtualGpuMapper *GpuSolver;
 

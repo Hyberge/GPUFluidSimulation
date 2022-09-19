@@ -1024,3 +1024,92 @@ extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float 
 
     return kernelTime;
 }
+
+__global__ void add_buoyancy_kernel(float *field, float* density, float* temperature,
+                            int ni, int nj, int nk, float alpha, float beta)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i<ni&& j > 0 && j<nj && k<nk)
+    {
+        float d0 = density[index];
+        float T0 = temperature[index];
+        int index1 = k*ni*nj + (j-1)*ni + i;
+        float d1 = density[index1];
+        float T1 = temperature[index1];
+        float f = 0.5 * dt * (beta*(T0+T1) - alpha*(d0+d1));
+
+        field[index] += f;
+    }
+    __syncthreads();
+}
+
+extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperature,
+                            int ni, int nj, int nk, float alpha, float beta)
+{
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, 0);
+
+    number = ni * (nj + 1) * nk;
+    numBlocks = (number + 255)/256;
+    add_buoyancy_kernel<<<numBlocks, blocksize>>>(field, density, temperature, ni, nj+1, nk, alpha, beta);
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+
+    float kernelTime;
+    cudaEventElapsedTime(&kernelTime, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return kernelTime;
+}
+
+__global__ void diffuse_field_kernel(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    {
+        float value = field[index];
+        float value0 = field[k*ni*nj + j*ni + i - 1];
+        float value1 = field[k*ni*nj + j*ni + i + 1];
+        float value2 = field[k*ni*nj + (j - 1)*ni + i];
+        float value3 = field[k*ni*nj + (j + 1)*ni + i];
+        float value4 = field[(k - 1)*ni*nj + j*ni + i];
+        float value5 = field[(k + 1)*ni*nj + j*ni + i];
+
+        fieldTemp[index] = (value + coef*(value0 + value1 + value2 + value3 + value4 + value5)) / (1.0f + 6.0f*coef);
+    }
+    __syncthreads();
+}
+
+extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+{
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, 0);
+
+    number = ni * nj * nk;
+    numBlocks = (number + 255)/256;
+    diffuse_field_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, ni, nj, nk, coef);
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+
+    float kernelTime;
+    cudaEventElapsedTime(&kernelTime, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return kernelTime;
+}

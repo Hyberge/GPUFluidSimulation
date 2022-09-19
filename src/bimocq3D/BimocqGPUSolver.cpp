@@ -112,3 +112,8 @@ void BimocqGPUSolver::emitSmoke(int framenum, float dt)
             sim_emitter[1].e_pos[0], sim_emitter[1].e_pos[1], sim_emitter[1].e_pos[2], 0.015f, sim_emitter[1].emit_density, sim_emitter[1].emit_temperature, -1.f);
     }
 }
+
+void BimocqGPUSolver::addBuoyancy(float dt)
+{
+    GpuSolver->add_buoyancy(VelocityV, Density, Temperature, CellNumberX, CellNumberY, CellNumberZ, alpha, beta);
+}

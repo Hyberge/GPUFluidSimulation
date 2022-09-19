@@ -77,6 +77,11 @@ extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float 
                             float h, int ni, int nj, int nk, 
                             float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter);
 
+extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperature,
+                            float h, int ni, int nj, int nk, float alpha, float beta);
+
+extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef);
+
 class gpuMapper{
 public:
     gpuMapper(){}
@@ -501,6 +506,28 @@ public:
                     float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
     {
         return gpu_emit_smoke(u, v, w, rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature, emiter);
+    }
+
+    float add_buoyancy(float *field, float* density, float* temperature,
+                    int ni, int nj, int nk, float alpha, float beta)
+    {
+        return gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta);
+    }
+
+    float diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+    {
+        return gpu_diffuse_field(field, fieldTemp, ni, nj, nk, coef);
+    }
+
+    float add(float *field1, float *field2, float coeff, int number)
+    {
+        return gpu_add(field1, field2, coeff, number);
+    }
+
+    float estimateDistortionCUDA()
+    {
+        cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
+        return gpu_estimate_distortion(du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk);
     }
 };
 
