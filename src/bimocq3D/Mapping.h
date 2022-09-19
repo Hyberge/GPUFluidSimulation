@@ -62,7 +62,13 @@ public:
                         float *SrcU, float* SrcV, float* SrcW);
     float advectField(float *field, float *fieldInit, float *fieldPrev, float *SrcU);
 
-    float estimateDistortion(const buffer3Dc &boundary, float& time);
+    //float estimateDistortion(float *boundary);
+
+    float accumulateVelocity(float *uChange, float *vChange, float *wChange, float *uInit, float *vInit, float *wInit, float coeff);
+
+    float accumulateField(float *fieldChange, float *dfieldInit, bool is_point, float coeff);
+
+    void reinitializeMapping();
 
 private:
     uint   CellNumberX, CellNumberY, CellNumberZ;
@@ -72,6 +78,10 @@ private:
     float *ForwardX = nullptr, *ForwardY = nullptr, *ForwardZ = nullptr;
     float *BackwardX = nullptr, *BackwardY = nullptr, *BackwardZ = nullptr;
     float *BackwardXPrev = nullptr, *BackwardYPrev = nullptr, *BackwardZPrev = nullptr;
+
+    float *InitX = nullptr, *InitY = nullptr, *InitZ = nullptr;
+
+    float *Distortion = nullptr;
 
     VirtualGpuMapper *GpuSolver;
 };

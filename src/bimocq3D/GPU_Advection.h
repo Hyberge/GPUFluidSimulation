@@ -78,7 +78,7 @@ extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float 
                             float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter);
 
 extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperature,
-                            float h, int ni, int nj, int nk, float alpha, float beta);
+                            int ni, int nj, int nk, float alpha, float beta, float dt);
 
 extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef);
 
@@ -509,9 +509,9 @@ public:
     }
 
     float add_buoyancy(float *field, float* density, float* temperature,
-                    int ni, int nj, int nk, float alpha, float beta)
+                    int ni, int nj, int nk, float alpha, float beta, float dt)
     {
-        return gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta);
+        return gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta, dt);
     }
 
     float diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
@@ -524,10 +524,28 @@ public:
         return gpu_add(field1, field2, coeff, number);
     }
 
-    float estimateDistortionCUDA()
+    float estimateDistortionCUDA(float *distortion,
+                                float *x_back, float *y_back, float *z_back,
+                                float *x_fwd, float *y_fwd, float *z_fwd,
+                                float h, int ni, int nj, int nk)
     {
-        cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
-        return gpu_estimate_distortion(du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk);
+        cudaMemset(distortion, 0, sizeof(float)*(ni+1)*nj*nk);
+        return gpu_estimate_distortion(distortion, x_back, y_back, z_back, x_fwd, y_fwd, z_fwd, h, ni, nj, nk);
+    }
+
+    float accumulateVelocity(float *uChange, float *vChange, float *wChange,
+                            float *duInit, float *dvInit, float *dwInit,
+                            float *forwardX, float *forwardY, float *forwardZ,
+                            float h, int ni, int nj, int nk, bool is_point, float coeff)
+    {
+        return gpu_accumulate_velocity(uChange, vChange, wChange, duInit, dvInit, dwInit, forwardX, forwardY, forwardZ, h, ni, nj, nk, is_point, coeff);
+    }
+
+    float accumulateField(float *fieldChange, float *dfieldInit,
+                        float *forwardX, float *forwardY, float *forwardZ,
+                        float h, int ni, int nj, int nk, bool is_point, float coeff)
+    {
+        return gpu_accumulate_field(fieldChange, dfieldInit, forwardX, forwardY, forwardZ, h, ni, nj, nk, is_point, coeff);
     }
 };
 

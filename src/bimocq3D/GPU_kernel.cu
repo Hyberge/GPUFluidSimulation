@@ -1026,7 +1026,7 @@ extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float 
 }
 
 __global__ void add_buoyancy_kernel(float *field, float* density, float* temperature,
-                            int ni, int nj, int nk, float alpha, float beta)
+                            int ni, int nj, int nk, float alpha, float beta, float dt)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1047,7 +1047,7 @@ __global__ void add_buoyancy_kernel(float *field, float* density, float* tempera
 }
 
 extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperature,
-                            int ni, int nj, int nk, float alpha, float beta)
+                            int ni, int nj, int nk, float alpha, float beta, float dt)
 {
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -1055,9 +1055,10 @@ extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperatu
 
     cudaEventRecord(start, 0);
 
-    number = ni * (nj + 1) * nk;
-    numBlocks = (number + 255)/256;
-    add_buoyancy_kernel<<<numBlocks, blocksize>>>(field, density, temperature, ni, nj+1, nk, alpha, beta);
+    int blocksize = 256;
+    int number = ni * (nj + 1) * nk;
+    int numBlocks = (number + 255)/256;
+    add_buoyancy_kernel<<<numBlocks, blocksize>>>(field, density, temperature, ni, nj+1, nk, alpha, beta, dt);
 
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -1099,8 +1100,9 @@ extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int n
 
     cudaEventRecord(start, 0);
 
-    number = ni * nj * nk;
-    numBlocks = (number + 255)/256;
+    int blocksize = 256;
+    int number = ni * (nj + 1) * nk;
+    int numBlocks = (number + 255)/256;
     diffuse_field_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, ni, nj, nk, coef);
 
     cudaEventRecord(stop, 0);

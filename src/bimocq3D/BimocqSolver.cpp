@@ -172,6 +172,8 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
 
     totalTime += time;
     cout << "[ Accumulate Fields Done with GPU time: " << time << "ms ]" << endl;
+
+    if (velReinit)
     {
         VelocityAdvector.reinitializeMapping();
         velocityReinitialize();

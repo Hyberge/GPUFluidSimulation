@@ -38,6 +38,10 @@ public:
 
     void initBoundary();
 
+    void velocityReinitialize();
+
+    void scalarReinitialize();
+
     // smoke parameter
     float _alpha;
     float _beta;
@@ -67,31 +71,14 @@ public:
 
     VirtualGpuMapper *GpuSolver;
 
-    // simulation data
-    uint _nx, _ny, _nz;     // voxel number
-    float max_v;
-    float _h;               // cell size
-    float viscosity;
-    buffer3Df _un, _vn, _wn;                // velocity
-    buffer3Df _uinit, _vinit, _winit;       // v0
-    buffer3Df _uprev, _vprev, _wprev;       // velocity in prev-frame
-    buffer3Df _utemp, _vtemp, _wtemp;
-    buffer3Df _duproj, _dvproj, _dwproj;
-    buffer3Df _duextern, _dvextern, _dwextern;
-    buffer3Df _rho, _rhotemp, _rhoinit, _rhoprev, _drhoextern;  // density
-    buffer3Df _T, _Ttemp, _Tinit, _Tprev, _dTextern;            // Temperature
+    MapperBaseGPU VelocityAdvector;
+    MapperBaseGPU ScalarAdvector;
 
-    buffer3Df _usolid, _vsolid, _wsolid;
-    Array3c u_valid, v_valid, w_valid;
-    // initialize advector
-    MapperBase VelocityAdvector;
-    MapperBase ScalarAdvector;
     int vel_lastReinit = 0;
     int scalar_lastReinit = 0;
     Scheme sim_scheme;
 
     std::vector<Emitter> sim_emitter;
-    std::vector<Boundary> sim_boundary;
 };
 
 #endif  // BIMOCQGPUSOLVER_H
