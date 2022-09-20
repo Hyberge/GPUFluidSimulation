@@ -514,7 +514,7 @@ public:
         return gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta, dt);
     }
 
-    float diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+    float diffuseField(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
     {
         return gpu_diffuse_field(field, fieldTemp, ni, nj, nk, coef);
     }

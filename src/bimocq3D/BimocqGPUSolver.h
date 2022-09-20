@@ -32,9 +32,11 @@ public:
 
     float getCFL();
 
-    void emitSmoke(int framenum, float dt);
+    float emitSmoke(int framenum, float dt);
 
-    void addBuoyancy(float dt);
+    float addBuoyancy(float dt);
+
+    float diffuseField(float *field, float nu, float dt);
 
     void initBoundary();
 
@@ -68,6 +70,11 @@ public:
     float* Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr;
 
     float* boundaryDesc = nullptr;
+
+    uint VelocityBufferSizeX = 0;
+    uint VelocityBufferSizeY = 0;
+    uint VelocityBufferSizeZ = 0;
+    uint ScaleFieldSize = 0;
 
     VirtualGpuMapper *GpuSolver;
 
