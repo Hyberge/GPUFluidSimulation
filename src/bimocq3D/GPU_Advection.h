@@ -82,6 +82,8 @@ extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperatu
 
 extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef);
 
+extern "C" float gpu_add_field(float *out, float *field1, float *field2, float coeff, int number);
+
 class gpuMapper{
 public:
     gpuMapper(){}
@@ -522,6 +524,11 @@ public:
     float add(float *field1, float *field2, float coeff, int number)
     {
         return gpu_add(field1, field2, coeff, number);
+    }
+
+    float addFields(float* out, float *field1, float *field2, float coeff, int number)
+    {
+        return gpu_add_field(out, field1, field2, coeff, number);
     }
 
     float estimateDistortionCUDA(float *distortion,

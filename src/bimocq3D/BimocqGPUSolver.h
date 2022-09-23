@@ -36,7 +36,9 @@ public:
 
     float addBuoyancy(float dt);
 
-    float diffuseField(float *field, float nu, float dt);
+    float diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, float nu, float dt);
+
+    float projection();
 
     void initBoundary();
 
@@ -59,10 +61,12 @@ public:
     float  CellSize;
     float  MaxVelocity;
     float  Viscosity;
-    float* VelocityU = nullptr, *VelocityV = nullptr, *VelocityW = nullptr;
-    float* VelocityUInit = nullptr, *VelocityVInit = nullptr, *VelocityWInit = nullptr;
-    float* VelocityUPrev = nullptr, *VelocityVPrev = nullptr, *VelocityWPrev = nullptr;
-    float* VelocityUTemp = nullptr, *VelocityVTemp = nullptr, *VelocityWTemp = nullptr;
+    float *VelocityU = nullptr, *VelocityV = nullptr, *VelocityW = nullptr;
+    float *VelocityUInit = nullptr, *VelocityVInit = nullptr, *VelocityWInit = nullptr;
+    float *VelocityUPrev = nullptr, *VelocityVPrev = nullptr, *VelocityWPrev = nullptr;
+    float *VelocityUTemp = nullptr, *VelocityVTemp = nullptr, *VelocityWTemp = nullptr;
+
+    float *duExtern = nullptr, *dvExtern = nullptr, *dwExtern = nullptr;
 
     float* TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
 

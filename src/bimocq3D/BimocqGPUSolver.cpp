@@ -31,6 +31,10 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
     GpuSolver->allocGPUBuffer((void**)&VelocityWPrev, VelocityBufferSizeZ);
     GpuSolver->allocGPUBuffer((void**)&VelocityWTemp, VelocityBufferSizeZ);
 
+    GpuSolver->allocGPUBuffer((void**)&duExtern, VelocityBufferSizeX);
+    GpuSolver->allocGPUBuffer((void**)&dvExtern, VelocityBufferSizeY);
+    GpuSolver->allocGPUBuffer((void**)&dwExtern, VelocityBufferSizeZ);
+
     GpuSolver->allocGPUBuffer((void**)&TempSrcU, VelocityBufferSizeX);
     GpuSolver->allocGPUBuffer((void**)&TempSrcV, VelocityBufferSizeY);
     GpuSolver->allocGPUBuffer((void**)&TempSrcW, VelocityBufferSizeZ);
@@ -90,9 +94,21 @@ void BimocqGPUSolver::advance(int framenum, float dt)
 
     if (Viscosity)
     {
-        diffuseField()
+        diffuseField(VelocityU, TempSrcU, CellNumberX + 1, CellNumberY, CellNumberZ, Viscosity, dt);
+        diffuseField(VelocityV, TempSrcV, CellNumberX, CellNumberY + 1, CellNumberZ, Viscosity, dt);
+        diffuseField(VelocityW, TempSrcW, CellNumberX, CellNumberY, CellNumberZ + 1, Viscosity, dt);
     }
     
+    // calculate velocity change due to external forces(e.g. buoyancy)
+    GpuSolver->addFields(duExtern, VelocityU, VelocityUTemp, -1, (ni + 1) * nj * nk);
+    GpuSolver->addFields(dvExtern, VelocityV, VelocityVTemp, -1, ni * (nj + 1) * nk);
+    GpuSolver->addFields(dwExtern, VelocityW, VelocityWTemp, -1, ni * nj * (nk + 1));
+
+    GpuSolver->copyDeviceToDevice(VelocityUTemp, VelocityU, VelocityBufferSizeX);
+    GpuSolver->copyDeviceToDevice(VelocityVTemp, VelocityV, VelocityBufferSizeY);
+    GpuSolver->copyDeviceToDevice(VelocityWTemp, VelocityW, VelocityBufferSizeZ);
+
+    projection();
 }
 
 float BimocqGPUSolver::semilagAdvect(float cfldt, float dt)
@@ -159,15 +175,23 @@ float BimocqGPUSolver::addBuoyancy(float dt)
     return GpuSolver->add_buoyancy(VelocityV, Density, Temperature, CellNumberX, CellNumberY, CellNumberZ, alpha, beta);
 }
 
-float BimocqGPUSolver::diffuseField(float *field, float *fieldTemp, uint bufferSize, float nu, float dt)
+float BimocqGPUSolver::diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, float nu, float dt)
 {
     float coef = nu * (dt / (CellSize * CellSize));
 
-    float time = GpuSolver->diffuseField(field, fieldTemp, CellNumberX, CellNumberY, CellNumberZ, coef);
+    float time = GpuSolver->diffuseField(field, fieldTemp, ni, nj, nk, coef);
 
-    GpuSolver->copyDeviceToDevice(field, fieldTemp, bufferSize);
+    GpuSolver->copyDeviceToDevice(field, fieldTemp, ni * nj * nk * sizeof(float));
 
     return time;
+}
+
+float BimocqGPUSolver::projection()
+{
+#if 1   // jacobi iteration
+
+#else   // AMG solver
+#endif
 }
 
 void BimocqGPUSolver::initBoundary()
@@ -175,8 +199,7 @@ void BimocqGPUSolver::initBoundary()
     if (boundaryDesc == nullptr)
     {
         uint cellSize = CellNumberX * CellNumberY * CellNumberZ;
-        uint bufferSize = cellSize * sizeof(float);
-        GpuSolver->allocGPUBuffer((void**)&boundaryDesc, bufferSize`);
+        GpuSolver->allocGPUBuffer((void**)&boundaryDesc, ScaleFieldSize);
 
         float* initTemp = new float[cellSize];
         memset(initTemp, 0, bufferSize);
@@ -200,6 +223,8 @@ void BimocqGPUSolver::initBoundary()
             }
             
         });
+
+        GpuSolver->copyHostToDevice(initTemp, boundaryDesc, ScaleFieldSize);
     }
 }
 

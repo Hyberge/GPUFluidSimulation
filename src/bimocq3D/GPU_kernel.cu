@@ -1115,3 +1115,39 @@ extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int n
 
     return kernelTime;
 }
+
+__global__ void add_field_kernel(float *out, float *field1, float *field2, float coeff)
+{
+    unsigned int i = blockIdx.x *blockDim.x + threadIdx.x;
+    out[i] = field1[i] + coeff*field2[i];
+    __syncthreads();
+}
+
+extern "C" float gpu_add_field(float *out, float *field1, float *field2, float coeff, int number)
+{
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, 0);
+
+    int blocksize = 256;
+    int numBlocks = (number + 255)/256;
+    add_field_kernel<<<numBlocks, blocksize>>>(out, field1, field2, coeff);
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+
+    float kernelTime;
+    cudaEventElapsedTime(&kernelTime, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return kernelTime;
+}
+
+__global__ void jacobi_matrix_construction(float *u, float *v, float *w, float *desity, float *boundaryDesc, float coeff)
+{
+    unsigned int i = blockIdx.x *blockDim.x + threadIdx.x;
+    
+}
