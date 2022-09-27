@@ -1146,8 +1146,112 @@ extern "C" float gpu_add_field(float *out, float *field1, float *field2, float c
     return kernelTime;
 }
 
-__global__ void jacobi_matrix_construction(float *u, float *v, float *w, float *desity, float *boundaryDesc, float coeff)
+// jacobi iteration for projection
+__global__ void divergence_kernel(float *u, float *v, float *w, float *div, int ni, int nj, int nk, float halfrdx/*0.5 / gridscale*/)
 {
-    unsigned int i = blockIdx.x *blockDim.x + threadIdx.x;
-    
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    {
+        float u_left = u[k*(ni+1)*nj + j*(ni+1) + i];
+        float u_right = u[k*(ni+1)*nj + j*(ni+1) + i + 1];
+        float v_front = v[k*ni*(nj+1) + (j)*ni + i];
+        float v_back = v[k*ni*(nj+1) + (j + 1)*ni + i];
+        float w_down = w[(k)*ni*nj + j*ni + i];
+        float w_up = w[(k + 1)*ni*nj + j*ni + i];
+
+        div[index] = halfrdx * ((u_right - u_left) + (v_back - v_front) + (w_up - w_down));
+    }
+    __syncthreads();
 }
+
+__global__ void jacobi_kernel(float *p, float *div, float *outP, int ni, int nj, int nk, float alpha, float beta)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    {
+        float p_left = p[k*nj*ni + j*ni + i - 1];
+        float p_right = p[k*nj*ni + j*ni + i + 1];
+        float p_front = p[k*nj*ni + (j-1)*ni + i];
+        float p_back = p[k*nj*ni + (j+1)*ni + i];
+        float p_down = p[(k-1)*nj*ni + j*ni + i];
+        float p_up = p[(k+1)*nj*ni + j*ni + i];
+
+        outP[index] = (p_left + p_right + p_front + p_back + p_down + p_up + alpha * div[index]) * beta;
+    }
+    __syncthreads();
+}
+
+__global__ void gradient_kernel(float *field, float *p, int ni, int nj, int nk, int dimx, int dimy, int dimz, float halfrdx)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni&& j>0 && j<nj && k>0 && k<nk)
+    {
+        float p0 = p[index];
+        float p1 = p[(k-dimz)*nj*ni + (j-dimy)*ni + i - dimx];
+
+        field[index] -= halfrdx * (p0 - p1);
+    }
+    __syncthreads();
+}
+
+extern "C" float gpu_project_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+{
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, 0);
+
+    int blocksize = 256;
+    int number = ni * nj * nk;
+    int numBlocks = (number + 255)/256;
+    divergence_kernel<<<numBlocks, blocksize>>>(u, v, w, div, ni, nj, nk, halfrdx);
+
+    float *p_in = p;
+    float *p_out = p_temp;
+    for (size_t i = 0; i < iter; i++)
+    {
+        jacobi_kernel<<<numBlocks, blocksize>>>(p_in, div, p_out, ni, nj, nk, alpha, beta);
+
+        // swap
+        float *temp = p_in;
+        p_in = p_out;
+        p_out = temp;
+    }
+    if (p_out == p_temp)
+    {
+        cudaMemcpy(p, p_temp, number * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+    
+    number = (ni + 1) * nj * nk;
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(u, p_out, ni + 1, nj, nk, 1, 0, 0, halfrdx);
+
+    number = ni * (nj + 1) * nk;
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(v, p_out, ni, nj + 1, nk, 0, 1, 0, halfrdx);
+
+    number = ni * nj * (nk + 1);
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(w, p_out, ni, nj, nk + 1, 0, 0, 1, halfrdx);
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+
+    float kernelTime;
+    cudaEventElapsedTime(&kernelTime, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return kernelTime;
+}
+// jacobi iteration end
