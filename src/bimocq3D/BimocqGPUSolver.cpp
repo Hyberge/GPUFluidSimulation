@@ -49,6 +49,10 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
     GpuSolver->allocGPUBuffer((void**)&TemperaturePrev, ScaleFieldSize);
     GpuSolver->allocGPUBuffer((void**)&TemperatureTemp, ScaleFieldSize);
 
+    GpuSolver->allocGPUBuffer((void**)&p, ScaleFieldSize);
+    GpuSolver->allocGPUBuffer((void**)&p_temp, ScaleFieldSize);
+    GpuSolver->allocGPUBuffer((void**)&div, ScaleFieldSize);
+
     VelocityAdvector.init(CellNumberX, CellNumberY, CellNumberZ, CellSize, blend_coeff, mymapper);
     ScalarAdvector.init(CellNumberX, CellNumberY, CellNumberZ, CellSize, blend_coeff, mymapper);
 }
@@ -189,7 +193,7 @@ float BimocqGPUSolver::diffuseField(float *field, float *fieldTemp, int ni, int 
 float BimocqGPUSolver::projection()
 {
 #if 1   // jacobi iteration
-
+    GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, CellNumberX, CellNumberY, CellNumberZ, 20, 0.5 / CellSize, -CellSize * CellSize, 1.0 / 6.0);
 #else   // AMG solver
 #endif
 }

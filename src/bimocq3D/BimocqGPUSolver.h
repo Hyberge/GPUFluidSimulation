@@ -68,12 +68,15 @@ public:
 
     float *duExtern = nullptr, *dvExtern = nullptr, *dwExtern = nullptr;
 
-    float* TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
+    float *TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
 
-    float* Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr;
-    float* Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr;
+    float *Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr;
+    float *Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr;
 
-    float* boundaryDesc = nullptr;
+    float *p = nullptr, *p_temp = nullptr;
+    float *div = nullptr;
+
+    float *boundaryDesc = nullptr;
 
     uint VelocityBufferSizeX = 0;
     uint VelocityBufferSizeY = 0;

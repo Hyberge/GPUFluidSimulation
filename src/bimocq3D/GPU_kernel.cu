@@ -1193,17 +1193,20 @@ __global__ void gradient_kernel(float *field, float *p, int ni, int nj, int nk, 
     int i = index%ni;
     int j = (index%(ni*nj))/ni;
     int k = index/(ni*nj);
-    if (i>0 && i<ni&& j>0 && j<nj && k>0 && k<nk)
+    int pi = ni - dimx;
+    int pj = nj - dimy;
+    int pk = nk - dimz;
+    if (i>0 && i<pi&& j>0 && j<pj && k>0 && k<pk)
     {
-        float p0 = p[index];
-        float p1 = p[(k-dimz)*nj*ni + (j-dimy)*ni + i - dimx];
+        float p0 = p[k*pj*pi + j*pi + i];
+        float p1 = p[(k-dimz)*pj*pi + (j-dimy)*pi + i - dimx];
 
         field[index] -= halfrdx * (p0 - p1);
     }
     __syncthreads();
 }
 
-extern "C" float gpu_project_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+extern "C" float gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
 {
     cudaEvent_t start, stop;
     cudaEventCreate(&start);

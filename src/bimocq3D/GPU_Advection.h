@@ -84,6 +84,8 @@ extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int n
 
 extern "C" float gpu_add_field(float *out, float *field1, float *field2, float coeff, int number);
 
+extern "C" float gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta);
+
 class gpuMapper{
 public:
     gpuMapper(){}
@@ -362,6 +364,14 @@ public:
     {
         return gpu_emit_smoke(u, v, w, rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature, emiter);
     }
+
+    float projectionJacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+    {
+        cudaMemset(div, 0, sizeof(float)*ni*nj*nk);
+        cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
+        cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
+        return gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
+    }
 };
 
 class VirtualGpuMapper
@@ -553,6 +563,12 @@ public:
                         float h, int ni, int nj, int nk, bool is_point, float coeff)
     {
         return gpu_accumulate_field(fieldChange, dfieldInit, forwardX, forwardY, forwardZ, h, ni, nj, nk, is_point, coeff);
+    }
+
+    float projectionJacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+    {
+        cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
+        return gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
     }
 };
 

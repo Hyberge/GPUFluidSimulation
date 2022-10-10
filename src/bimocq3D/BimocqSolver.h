@@ -127,6 +127,8 @@ public:
     buffer3Df _rho, _rhotemp, _rhoinit, _rhoprev, _drhoextern;  // density
     buffer3Df _T, _Ttemp, _Tinit, _Tprev, _dTextern;            // Temperature
 
+    buffer3Df _debug, _debug_u, _debug_v, _debug_w;
+
     buffer3Df _usolid, _vsolid, _wsolid;
     Array3c u_valid, v_valid, w_valid;
     // initialize advector

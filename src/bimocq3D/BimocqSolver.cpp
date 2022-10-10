@@ -48,7 +48,10 @@ BimocqSolver::BimocqSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, 
     v_valid.resize(_nx,_ny+1,_nz);
     w_valid.resize(_nx,_ny,_nz+1);
 
-
+    _debug.init(_nx, _ny, _nz, _h, 0.f, 0.f, 0.f);
+    _debug_u.init(_nx+1, _ny, _nz, _h, 0.5f, 0.f, 0.f);
+    _debug_v.init(_nx, _ny+1, _nz, _h, 0.f, 0.5f, 0.f);
+    _debug_w.init(_nx, _ny, _nz+1, _h, 0.f, 0.f, 0.5f);
 
     _b_desc.init(_nx,_ny,_nz);
     // initialize BIMOCQ advector
@@ -1029,6 +1032,20 @@ float BimocqSolver::getCFL()
 
 void BimocqSolver::projection()
 {
+#if 1
+    gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
+
+    gpuSolver->projectionJacobi(gpuSolver->u, gpuSolver->v, gpuSolver->w, gpuSolver->x_in, gpuSolver->y_in, gpuSolver->z_in, _nx, _ny, _nz, 20, 0.5, -1, 1.0/6);
+
+    gpuSolver->copyDeviceToHost(_un, gpuSolver->u_host, gpuSolver->u);
+    gpuSolver->copyDeviceToHost(_vn, gpuSolver->v_host, gpuSolver->v);
+    gpuSolver->copyDeviceToHost(_wn, gpuSolver->w_host, gpuSolver->w);
+
+    gpuSolver->copyDeviceToHost(_debug_u, gpuSolver->u_host, gpuSolver->u);
+    gpuSolver->copyDeviceToHost(_debug, gpuSolver->x_host, gpuSolver->z_in);
+#else
     int ni = _nx;
     int nj = _ny;
     int nk = _nz;
@@ -1306,6 +1323,7 @@ void BimocqSolver::projection()
     //extrapolate(u_extrap,_un,u_valid);
     //extrapolate(v_extrap,_vn,v_valid);
     //extrapolate(w_extrap,_wn,w_valid);
+#endif
 }
 
 void BimocqSolver::outputResult(uint frame, string filepath)
