@@ -19,6 +19,7 @@ set(SOURCE_FILES
         GPU_kernel.cu
         Mapping.cpp
         BimocqSolver.cpp
+        BimocqGPUSolver.cpp
         )
 
 cuda_add_executable(BiMocq3D ${SOURCE_FILES})

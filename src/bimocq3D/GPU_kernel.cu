@@ -564,68 +564,30 @@ __global__ void add_kernel(float *field1, float *field2, float coeff)
     __syncthreads();
 }
 
-extern "C" float gpu_solve_forward(float *u, float *v, float *w,
+extern "C" void gpu_solve_forward(float *u, float *v, float *w,
                                   float *x_fwd, float *y_fwd, float *z_fwd,
                                   float h, int ni, int nj, int nk, float cfldt, float dt)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = ((ni*nj*nk) + 255)/256;
     forward_kernel<<< numBlocks, blocksize >>> (u, v, w, x_fwd, y_fwd, z_fwd, h, ni, nj, nk, cfldt, dt);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_solve_backwardDMC(float *u, float *v, float *w,
+extern "C" void gpu_solve_backwardDMC(float *u, float *v, float *w,
                                       float *x_in, float *y_in, float *z_in,
                                       float *x_out, float *y_out, float *z_out,
                                       float h, int ni, int nj, int nk, float substep)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = ((ni*nj*nk) + 255)/256;
     DMC_backward_kernel<<< numBlocks, blocksize >>> (u, v, w, x_in, y_in, z_in, x_out, y_out, z_out, h, ni, nj, nk, substep);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_advect_velocity(float *u, float *v, float *w,
+extern "C" void gpu_advect_velocity(float *u, float *v, float *w,
                                     float *u_init, float *v_init, float *w_init,
                                     float *backward_x, float *backward_y, float *backward_z,
                                     float h, int ni, int nj, int nk, bool is_point)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks_u = ((ni+1)*nj*nk + 255)/256;
     int numBlocks_v = (ni*(nj+1)*nk + 255)/256;
@@ -633,30 +595,14 @@ extern "C" float gpu_advect_velocity(float *u, float *v, float *w,
     advect_kernel<<< numBlocks_u, blocksize >>>(u, u_init, backward_x, backward_y, backward_z, h, ni, nj, nk, 1, 0, 0, is_point);
     advect_kernel<<< numBlocks_v, blocksize >>>(v, v_init, backward_x, backward_y, backward_z, h, ni, nj, nk, 0, 1, 0, is_point);
     advect_kernel<<< numBlocks_w, blocksize >>>(w, w_init, backward_x, backward_y, backward_z, h, ni, nj, nk, 0, 0, 1, is_point);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_advect_vel_double(float *u, float *v, float *w,
+extern "C" void gpu_advect_vel_double(float *u, float *v, float *w,
                                       float *utemp, float *vtemp, float *wtemp,
                                       float *backward_x, float *backward_y, float *backward_z,
                                       float *backward_xprev,  float *backward_yprev,  float *backward_zprev,
                                       float h, int ni, int nj, int nk, bool is_point, float blend_coeff)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks_u = ((ni+1)*nj*nk + 255)/256;
     int numBlocks_v = (ni*(nj+1)*nk + 255)/256;
@@ -669,83 +615,35 @@ extern "C" float gpu_advect_vel_double(float *u, float *v, float *w,
 
     doubleAdvect_kernel<<< numBlocks_w, blocksize >>> (w, wtemp, backward_x,backward_y,backward_z,
             backward_xprev, backward_yprev, backward_zprev,h,ni,nj,nk, 0, 0, 1, is_point, blend_coeff);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_advect_field(float *field, float *field_init,
+extern "C" void gpu_advect_field(float *field, float *field_init,
                                  float *backward_x, float *backward_y, float *backward_z,
                                  float h, int ni, int nj, int nk, bool is_point)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = ((ni*nj*nk) + 255)/256;
     advect_kernel<<< numBlocks, blocksize >>>(field, field_init, backward_x, backward_y, backward_z, h, ni, nj, nk, 0, 0, 0, is_point);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_advect_field_double(float *field, float *field_prev,
+extern "C" void gpu_advect_field_double(float *field, float *field_prev,
                                         float *backward_x, float *backward_y, float *backward_z,
                                         float *backward_xprev, float *backward_yprev,   float *backward_zprev,
                                         float h, int ni, int nj, int nk, bool is_point, float blend_coeff)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = ((ni*nj*nk) + 255)/256;
     doubleAdvect_kernel<<< numBlocks, blocksize >>> (field, field_prev, backward_x, backward_y, backward_z,
             backward_xprev, backward_yprev, backward_zprev,h,ni,nj,nk, 0, 0, 0, is_point, blend_coeff);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_compensate_velocity(float *u, float *v, float *w,
+extern "C" void gpu_compensate_velocity(float *u, float *v, float *w,
                                         float *du, float *dv, float *dw,
                                         float *u_src, float *v_src, float *w_src,
                                         float *forward_x, float *forward_y, float *forward_z,
                                         float *backward_x, float *backward_y, float *backward_z,
                                         float h, int ni, int nj, int nk, bool is_point)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks_u = ((ni+1)*nj*nk + 255)/256;
     int numBlocks_v = (ni*(nj+1)*nk + 255)/256;
@@ -765,29 +663,13 @@ extern "C" float gpu_compensate_velocity(float *u, float *v, float *w,
     clampExtrema_kernel<<< numBlocks_u, blocksize >>>(du, u, ni+1, nj, nk);
     clampExtrema_kernel<<< numBlocks_v, blocksize >>>(dv, v, ni, nj+1, nk);
     clampExtrema_kernel<<< numBlocks_w, blocksize >>>(dw, w, ni, nj, nk+1);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_compensate_field(float *u, float *du, float *u_src,
+extern "C" void gpu_compensate_field(float *u, float *du, float *u_src,
                                      float *forward_x, float *forward_y, float *forward_z,
                                      float *backward_x, float *backward_y, float *backward_z,
                                      float h, int ni, int nj, int nk, bool is_point)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks_u = ((ni+1)*nj*nk + 255)/256;
     // error at time 0 will be in du
@@ -797,29 +679,13 @@ extern "C" float gpu_compensate_field(float *u, float *du, float *u_src,
     cumulate_kernel<<< numBlocks_u, blocksize >>>(u_src, u, backward_x, backward_y, backward_z, h, ni, nj, nk, 0, 0, 0, is_point, -0.5f);
     // clamp extrema, clamped result will be in gpu.u
     clampExtrema_kernel<<< numBlocks_u, blocksize >>>(du, u, ni, nj, nk);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_accumulate_velocity(float *u_change, float *v_change, float *w_change,
+extern "C" void gpu_accumulate_velocity(float *u_change, float *v_change, float *w_change,
                                         float *du_init, float *dv_init, float *dw_init,
                                         float *forward_x, float *forward_y, float *forward_z,
                                         float h, int ni, int nj, int nk, bool is_point, float coeff)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks_u = ((ni+1)*nj*nk + 255)/256;
     int numBlocks_v = (ni*(nj+1)*nk + 255)/256;
@@ -827,118 +693,44 @@ extern "C" float gpu_accumulate_velocity(float *u_change, float *v_change, float
     cumulate_kernel<<< numBlocks_u, blocksize >>> (u_change, du_init, forward_x, forward_y, forward_z, h, ni, nj, nk, 1, 0, 0, is_point, coeff);
     cumulate_kernel<<< numBlocks_v, blocksize >>> (v_change, dv_init, forward_x, forward_y, forward_z, h, ni, nj, nk, 0, 1, 0, is_point, coeff);
     cumulate_kernel<<< numBlocks_w, blocksize >>> (w_change, dw_init, forward_x, forward_y, forward_z, h, ni, nj, nk, 0, 0, 1, is_point, coeff);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_accumulate_field(float *field_change, float *dfield_init,
+extern "C" void gpu_accumulate_field(float *field_change, float *dfield_init,
                                      float *forward_x, float *forward_y, float *forward_z,
                                      float h, int ni, int nj, int nk, bool is_point, float coeff)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = ((ni*nj*nk) + 255)/256;
     cumulate_kernel<<< numBlocks, blocksize >>> (field_change, dfield_init, forward_x, forward_y, forward_z, h, ni, nj, nk, 0, 0, 0, is_point, coeff);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_estimate_distortion(float *du,
+extern "C" void gpu_estimate_distortion(float *du,
                                         float *x_back, float *y_back, float *z_back,
                                         float *x_fwd, float *y_fwd, float *z_fwd,
                                         float h, int ni, int nj, int nk)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int est_numBlocks = ((ni*nj*nk) + 255)/256;
     // distortion will be stored in gpu.du
     estimate_kernel<<< est_numBlocks, blocksize>>> (du, x_back, y_back, z_back, x_fwd, y_fwd, z_fwd, h, ni, nj, nk);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_semilag(float *field, float *field_src,
+extern "C" void gpu_semilag(float *field, float *field_src,
                             float *u, float *v, float *w,
                             int dim_x, int dim_y, int dim_z,
                             float h, int ni, int nj, int nk, float cfldt, float dt)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int total_num = (ni+dim_x)*(nj+dim_y)*(nk+dim_z);
     int numBlocks = (total_num + 255)/256;
     semilag_kernel<<<numBlocks, blocksize>>>(field, field_src, u, v, w, dim_x, dim_y, dim_z, h, ni, nj, nk, cfldt, dt);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
-extern "C" float gpu_add(float *field1, float *field2, float coeff, int number)
+extern "C" void gpu_add(float *field1, float *field2, float coeff, int number)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = (number + 255)/256;
     add_kernel<<<numBlocks, blocksize>>>(field1, field2, coeff);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
 __global__ void emit_smoke_velocity_kernel(float *field,
@@ -987,16 +779,10 @@ __global__ void emit_smoke_field_kernel(float *rho, float *T,
     __syncthreads();
 }
 
-extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float *T,
+extern "C" void gpu_emit_smoke(float *u, float *v, float *w, float *rho, float *T,
                             float h, int ni, int nj, int nk, 
                             float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int number = (ni+1) * nj * nk;
     int numBlocks = (number + 255)/256;
@@ -1013,16 +799,6 @@ extern "C" float gpu_emit_smoke(float *u, float *v, float *w, float *rho, float 
     number = ni * nj * nk;
     numBlocks = (number + 255)/256;
     emit_smoke_field_kernel<<<numBlocks, blocksize>>>(rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
 __global__ void add_buoyancy_kernel(float *field, float* density, float* temperature,
@@ -1046,29 +822,13 @@ __global__ void add_buoyancy_kernel(float *field, float* density, float* tempera
     __syncthreads();
 }
 
-extern "C" float gpu_add_buoyancy(float *field, float* density, float* temperature,
+extern "C" void gpu_add_buoyancy(float *field, float* density, float* temperature,
                             int ni, int nj, int nk, float alpha, float beta, float dt)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int number = ni * (nj + 1) * nk;
     int numBlocks = (number + 255)/256;
     add_buoyancy_kernel<<<numBlocks, blocksize>>>(field, density, temperature, ni, nj+1, nk, alpha, beta, dt);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
 __global__ void diffuse_field_kernel(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
@@ -1092,28 +852,12 @@ __global__ void diffuse_field_kernel(float *field, float* fieldTemp, int ni, int
     __syncthreads();
 }
 
-extern "C" float gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+extern "C" void gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int number = ni * (nj + 1) * nk;
     int numBlocks = (number + 255)/256;
     diffuse_field_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, ni, nj, nk, coef);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
 __global__ void add_field_kernel(float *out, float *field1, float *field2, float coeff)
@@ -1123,27 +867,11 @@ __global__ void add_field_kernel(float *out, float *field1, float *field2, float
     __syncthreads();
 }
 
-extern "C" float gpu_add_field(float *out, float *field1, float *field2, float coeff, int number)
+extern "C" void gpu_add_field(float *out, float *field1, float *field2, float coeff, int number)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int numBlocks = (number + 255)/256;
     add_field_kernel<<<numBlocks, blocksize>>>(out, field1, field2, coeff);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 
 // jacobi iteration for projection
@@ -1206,14 +934,8 @@ __global__ void gradient_kernel(float *field, float *p, int ni, int nj, int nk, 
     __syncthreads();
 }
 
-extern "C" float gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
 {
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    cudaEventRecord(start, 0);
-
     int blocksize = 256;
     int number = ni * nj * nk;
     int numBlocks = (number + 255)/256;
@@ -1246,15 +968,5 @@ extern "C" float gpu_projection_jacobi(float *u, float *v, float *w , float *div
     number = ni * nj * (nk + 1);
     numBlocks = (number + 255)/256;
     gradient_kernel<<<numBlocks, blocksize>>>(w, p_out, ni, nj, nk + 1, 0, 0, 1, halfrdx);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-
-    float kernelTime;
-    cudaEventElapsedTime(&kernelTime, start, stop);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-
-    return kernelTime;
 }
 // jacobi iteration end

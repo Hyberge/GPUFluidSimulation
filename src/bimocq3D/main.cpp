@@ -3,6 +3,7 @@
 #include <iostream>
 #include "GPU_Advection.h"
 #include "BimocqSolver.h"
+#include "BimocqGPUSolver.h"
 #include <boost/filesystem.hpp>
 
 int main(int argc, char** argv) {
@@ -30,7 +31,7 @@ int main(int argc, char** argv) {
 	    ni = 100;
 	    nj = 200;
 	    nk = 200;
-	    total_frame = 300;
+	    total_frame = 10;
 	    // length in x direction
 	    L = 0.2f;
 	    // grid size for simulation
@@ -103,6 +104,7 @@ int main(int argc, char** argv) {
     }
     boost::filesystem::create_directories(filepath);
 
+#if 0
 	auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
 	BimocqSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);
 	mysolver.setSmoke(smoke_rise, smoke_drop, emitter_list);
@@ -114,5 +116,17 @@ int main(int argc, char** argv) {
 		mysolver.advance(i, dt);
         mysolver.outputResult(i, filepath);
     }
+#else
+    auto *myGPUmapper = new VirtualGpuMapper();
+    BimocqGPUSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, myGPUmapper);
+    mysolver.setSmoke(smoke_drop, smoke_rise, emitter_list);
+    for (uint i = 0; i < total_frame; i++)
+	{
+        cout << "Frame " << i << " Starts !!!" << std::endl;
+		mysolver.advance(i, dt);
+        mysolver.outputResult(i, filepath);
+    }
+#endif
+
 	return 0;
 }

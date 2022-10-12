@@ -19,6 +19,7 @@
 #include "Mapping.h"
 #include "../utils/AlgebraicMultigrid.h"
 #include "../utils/volumeMeshTools.h"
+#include "BimocqSolver.h"
 
 class BimocqGPUSolver {
 public:
@@ -28,23 +29,27 @@ public:
 
     void advance(int framenum, float dt);
 
-    float semilagAdvect(float cfldt, float dt);
+    void semilagAdvect(float cfldt, float dt);
 
     float getCFL();
 
-    float emitSmoke(int framenum, float dt);
+    void emitSmoke(int framenum, float dt);
 
-    float addBuoyancy(float dt);
+    void addBuoyancy(float dt);
 
-    float diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, float nu, float dt);
+    void diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, float nu, float dt);
 
-    float projection();
+    void projection();
 
     void initBoundary();
 
     void velocityReinitialize();
 
     void scalarReinitialize();
+
+    void setSmoke(float drop, float raise, const std::vector<Emitter> &emitters);
+
+    void outputResult(uint frame, string filepath);
 
     // smoke parameter
     float _alpha;
@@ -66,17 +71,23 @@ public:
     float *VelocityUPrev = nullptr, *VelocityVPrev = nullptr, *VelocityWPrev = nullptr;
     float *VelocityUTemp = nullptr, *VelocityVTemp = nullptr, *VelocityWTemp = nullptr;
 
+    float *duProj = nullptr, *dvProj = nullptr, *dwProj = nullptr;
     float *duExtern = nullptr, *dvExtern = nullptr, *dwExtern = nullptr;
 
     float *TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
 
-    float *Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr;
-    float *Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr;
+    float *Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr, *DensityExtern = nullptr;
+    float *Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr, *TemperatureExtern = nullptr;
 
     float *p = nullptr, *p_temp = nullptr;
     float *div = nullptr;
 
     float *boundaryDesc = nullptr;
+
+    buffer3Df output_density;
+    float *host_density;
+    buffer3Df output_u, output_v, output_w;
+    float *host_u, *host_v, *host_w;
 
     uint VelocityBufferSizeX = 0;
     uint VelocityBufferSizeY = 0;
@@ -90,7 +101,6 @@ public:
 
     int vel_lastReinit = 0;
     int scalar_lastReinit = 0;
-    Scheme sim_scheme;
 
     std::vector<Emitter> sim_emitter;
 };
