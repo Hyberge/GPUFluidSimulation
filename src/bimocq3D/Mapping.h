@@ -58,9 +58,8 @@ public:
 
     void advectVelocity(float *velocityU, float *velocityV, float *velocityW,
                         float *velocityUInit, float *velocityVInit, float *velocityWInit,
-                        float *velocityUPrev, float *velocityVPrev, float *velocityWPrev,
-                        float *SrcU, float* SrcV, float* SrcW);
-    void advectField(float *field, float *fieldInit, float *fieldPrev, float *SrcU);
+                        float *velocityUPrev, float *velocityVPrev, float *velocityWPrev);
+    void advectField(float *field, float *fieldInit, float *fieldPrev);
 
     //float estimateDistortion(float *boundary);
 

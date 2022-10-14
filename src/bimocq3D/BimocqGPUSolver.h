@@ -37,7 +37,7 @@ public:
 
     void addBuoyancy(float dt);
 
-    void diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, float nu, float dt);
+    void diffuseField(float *field, int ni, int nj, int nk, float nu, float dt);
 
     void projection();
 
@@ -74,7 +74,7 @@ public:
     float *duProj = nullptr, *dvProj = nullptr, *dwProj = nullptr;
     float *duExtern = nullptr, *dvExtern = nullptr, *dwExtern = nullptr;
 
-    float *TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
+    //float *TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
 
     float *Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr, *DensityExtern = nullptr;
     float *Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr, *TemperatureExtern = nullptr;

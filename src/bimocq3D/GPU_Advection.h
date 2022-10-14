@@ -375,9 +375,19 @@ class VirtualGpuMapper
 {
 public:
     VirtualGpuMapper() {}
-    ~VirtualGpuMapper() {}
+    VirtualGpuMapper(int ni, int nj, int nk)
+    {
+        cudaInit();
 
-    cudaEvent_t start, stop;
+        allocGPUBuffer((void**)&u_temp, (ni+1)*nj*nk*sizeof(float));
+        allocGPUBuffer((void**)&v_temp, ni*(nj+1)*nk*sizeof(float));
+        allocGPUBuffer((void**)&w_temp, ni*nj*(nk+1)*sizeof(float));
+
+        allocGPUBuffer((void**)&x_temp, ni*nj*nk*sizeof(float));
+        allocGPUBuffer((void**)&y_temp, ni*nj*nk*sizeof(float));
+        allocGPUBuffer((void**)&z_temp, ni*nj*nk*sizeof(float));
+    }
+    ~VirtualGpuMapper() {}
 
     void cudaInit()
     {
@@ -452,6 +462,7 @@ public:
     void allocGPUBuffer(void ** buffer, size_t size)
     {
         cudaMalloc(buffer, size);
+        cudaMemset(buffer, 0, sizeof(float) * size);
     }
 
     void solveForward(float *u, float *v, float *w,
@@ -462,11 +473,15 @@ public:
     }
 
     void solveBackwardDMC(float *u, float *v, float *w,
-        float *x_in, float *y_in, float *z_in,
-        float *x_out, float *y_out, float *z_out,
+        float *x_in_out, float *y_in_out, float *z_in_out,
         float h, int ni, int nj, int nk, float substep)
     {
-        gpu_solve_backwardDMC(u, v, w, x_in, y_in, z_in, x_out, y_out, z_out, h, ni, nj, nk, substep);
+        gpu_solve_backwardDMC(u, v, w, x_in_out, y_in_out, z_in_out, x_temp, y_temp, z_temp, h, ni, nj, nk, substep);
+
+        copyDeviceToDevice(x_in_out, x_temp, ni*nj*nk*sizeof(float));
+        copyDeviceToDevice(y_in_out, y_temp, ni*nj*nk*sizeof(float));
+        copyDeviceToDevice(z_in_out, z_temp, ni*nj*nk*sizeof(float));
+
     }
 
     void advectVelocity(float *u, float *v, float *w,
@@ -492,15 +507,14 @@ public:
 
     void compensateVelocity(float *u, float *v, float *w,
                             float *du, float *dv, float *dw,
-                            float *u_src, float *v_src, float *w_src,
                             float *forward_x, float *forward_y, float *forward_z,
                             float *backward_x, float *backward_y, float *backward_z,
                             float h, int ni, int nj, int nk, bool is_point)
     {
-        cudaMemset(u_src, 0, sizeof(float)*(ni+1)*nj*nk);
-        cudaMemset(v_src, 0, sizeof(float)*ni*(nj+1)*nk);
-        cudaMemset(w_src, 0, sizeof(float)*ni*nj*(nk+1));
-        gpu_compensate_velocity(u, v, w, du, dv, dw, u_src, v_src, w_src, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
+        cudaMemset(u_temp, 0, sizeof(float)*(ni+1)*nj*nk);
+        cudaMemset(v_temp, 0, sizeof(float)*ni*(nj+1)*nk);
+        cudaMemset(w_temp, 0, sizeof(float)*ni*nj*(nk+1));
+        gpu_compensate_velocity(u, v, w, du, dv, dw, u_temp, v_temp, w_temp, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
     }
 
     void advectField(float *field, float *field_init,
@@ -519,30 +533,34 @@ public:
         gpu_advect_field_double(field, field_prev, backward_x, backward_y, backward_z, backward_xprev, backward_yprev, backward_zprev, h, ni, nj, nk, is_point, blend_coeff);
     }
 
-    void compensateField(float *u, float *du, float *u_src,
+    void compensateField(float *u, float *du,
                          float *forward_x, float *forward_y, float *forward_z,
                          float *backward_x, float *backward_y, float *backward_z,
                          float h, int ni, int nj, int nk, bool is_point)
     {
-        gpu_compensate_field(u, du, u_src, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
+        cudaMemset(u_temp, 0, sizeof(float)*(ni+1)*nj*nk);
+        gpu_compensate_field(u, du, u_temp, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
     }
 
-    void semilagAdvectVelocity(float *velocityU, float *velocityV, float *velocityW,
-                            float *velocityUTemp, float *velocityVTemp, float *velocityWTemp,
-                            float *SrcU, float *SrcV, float *SrcW,
+    void semilagAdvectVelocity(float *u, float *v, float *w,
+                            float *u_out, float *v_out, float *w_out,
                             float h, int ni, int nj, int nk, float cfldt, float dt)
     {
-        cudaMemset(velocityUTemp, 0, sizeof(float)*(ni+1)*nj*nk);
-        cudaMemset(velocityVTemp, 0, sizeof(float)*ni*(nj+1)*nk);
-        cudaMemset(velocityWTemp, 0, sizeof(float)*ni*nj*(nk+1));
+        //copyDeviceToDevice(u_temp, u, sizeof(float)*(ni+1)*nj*nk);
+        //copyDeviceToDevice(v_temp, v, sizeof(float)*ni*(nj+1)*nk);
+        //copyDeviceToDevice(w_temp, w, sizeof(float)*ni*nj*(nk+1));
+        //
+        //cudaMemset(u_out, 0, sizeof(float)*(ni+1)*nj*nk);
+        //cudaMemset(v_out, 0, sizeof(float)*ni*(nj+1)*nk);
+        //cudaMemset(w_out, 0, sizeof(float)*ni*nj*(nk+1));
+        //
+        //gpu_semilag(u_out, u_temp, velocityU, velocityV, velocityW, 1, 0, 0, h, ni, nj, nk, cfldt, dt);
+        //gpu_semilag(v_out, v_temp, velocityU, velocityV, velocityW, 0, 1, 0, h, ni, nj, nk, cfldt, dt);
+        //gpu_semilag(w_out, w_temp, velocityU, velocityV, velocityW, 0, 0, 1, h, ni, nj, nk, cfldt, dt);
 
-        copyDeviceToDevice(SrcU, velocityU, sizeof(float)*(ni+1)*nj*nk);
-        copyDeviceToDevice(SrcV, velocityV, sizeof(float)*ni*(nj+1)*nk);
-        copyDeviceToDevice(SrcW, velocityW, sizeof(float)*ni*nj*(nk+1));
-
-        gpu_semilag(velocityUTemp, SrcU, velocityU, velocityV, velocityW, 1, 0, 0, h, ni, nj, nk, cfldt, dt);
-        gpu_semilag(velocityVTemp, SrcV, velocityU, velocityV, velocityW, 0, 1, 0, h, ni, nj, nk, cfldt, dt);
-        gpu_semilag(velocityWTemp, SrcW, velocityU, velocityV, velocityW, 0, 0, 1, h, ni, nj, nk, cfldt, dt);
+        gpu_semilag(u_out, u, u, v, w, 1, 0, 0, h, ni, nj, nk, cfldt, dt);
+        gpu_semilag(v_out, v, u, v, w, 0, 1, 0, h, ni, nj, nk, cfldt, dt);
+        gpu_semilag(w_out, w, u, v, w, 0, 0, 1, h, ni, nj, nk, cfldt, dt);
     }
 
     void semilagAdvectField(float *field, float *field_src,
@@ -567,9 +585,11 @@ public:
         gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta, dt);
     }
 
-    void diffuseField(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+    void diffuseField(float *field, int ni, int nj, int nk, float coef)
     {
-        gpu_diffuse_field(field, fieldTemp, ni, nj, nk, coef);
+        gpu_diffuse_field(field, x_temp, ni, nj, nk, coef);
+
+        copyDeviceToDevice(field, x_temp, ni * nj * nk * sizeof(float));
     }
 
     void add(float *field1, float *field2, float coeff, int number)
@@ -613,6 +633,13 @@ public:
         cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
         gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
     }
+
+private:
+
+    cudaEvent_t start, stop;
+
+    float *x_temp, *y_temp, *z_temp;
+    float *u_temp, *v_temp, *w_temp;
 };
 
 #endif //GPU_ADVECTION_H

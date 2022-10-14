@@ -595,7 +595,7 @@ float BimocqSolver::semilagAdvect(float cfldt, float dt)
 
 void BimocqSolver::emitSmoke(int framenum, float dt)
 {
-#if 1
+#if 0
     sim_emitter[0].update(framenum, _h, dt);
     sim_emitter[1].update(framenum, _h, dt);
     if (framenum < sim_emitter[0].emitFrame)
@@ -1009,7 +1009,7 @@ float BimocqSolver::getCFL()
 
 void BimocqSolver::projection()
 {
-#if 1
+#if 0
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));

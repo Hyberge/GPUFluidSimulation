@@ -345,11 +345,6 @@ void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, Virtua
 
 void MapperBaseGPU::updateMapping(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt)
 {
-    uint bufferSize = CellNumberX * CellNumberY * CellNumberZ * sizeof(float);
-    GpuSolver->copyDeviceToDevice(BackwardXPrev, BackwardX, bufferSize);
-    GpuSolver->copyDeviceToDevice(BackwardYPrev, BackwardY, bufferSize);
-    GpuSolver->copyDeviceToDevice(BackwardZPrev, BackwardZ, bufferSize);
-
     updateBackward(velocityU, velocityV, velocityW, cfldt, dt);
 
     updateForward(velocityU, velocityV, velocityW, cfldt, dt);
@@ -365,7 +360,8 @@ void MapperBaseGPU::updateBackward(float *velocityU, float *velocityV, float *ve
         {
             substep = dt - T;
         }
-        GpuSolver->solveBackwardDMC(velocityU, velocityV, velocityW, BackwardXPrev, BackwardYPrev, BackwardZPrev, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, substep);
+        GpuSolver->solveBackwardDMC(velocityU, velocityV, velocityW, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, substep);
+
         T += substep;
     }
 }
@@ -377,12 +373,11 @@ void MapperBaseGPU::updateForward(float *velocityU, float *velocityV, float *vel
 
 void MapperBaseGPU::advectVelocity(float *velocityU, float *velocityV, float *velocityW,
                         float *velocityUInit, float *velocityVInit, float *velocityWInit,
-                        float *velocityUPrev, float *velocityVPrev, float *velocityWPrev,
-                        float *SrcU, float* SrcV, float* SrcW)
+                        float *velocityUPrev, float *velocityVPrev, float *velocityWPrev)
 {
     GpuSolver->advectVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
-    GpuSolver->compensateVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, SrcU, SrcV, SrcW, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+    GpuSolver->compensateVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
     if (TotalReinitCount != 0)
     {
@@ -394,11 +389,11 @@ void MapperBaseGPU::advectVelocity(float *velocityU, float *velocityV, float *ve
     }
 }
 
-void MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev, float *SrcU)
+void MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev)
 {
     GpuSolver->advectField(field, fieldInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
-    GpuSolver->compensateField(field, fieldInit, SrcU, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+    GpuSolver->compensateField(field, fieldInit, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
     if (TotalReinitCount != 0)
     {
