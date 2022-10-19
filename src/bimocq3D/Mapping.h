@@ -69,6 +69,21 @@ public:
 
     void reinitializeMapping();
 
+    // Test code
+    void updateMapping(const buffer3Df &un, const buffer3Df &vn, const buffer3Df &wn, float cfldt, float dt);
+
+    void advectVelocity(buffer3Df &un, buffer3Df &vn, buffer3Df &wn,
+                                const buffer3Df &u_init, const buffer3Df &v_init, const buffer3Df &w_init,
+                                const buffer3Df &u_prev, const buffer3Df &v_prev, const buffer3Df &w_prev);
+    void advectField(buffer3Df &field, const buffer3Df &field_init, const buffer3Df &field_prev);
+
+    float estimateDistortion(const buffer3Dc &boundary);
+
+    void accumulateVelocity(buffer3Df &u_init, buffer3Df &v_init, buffer3Df &w_init,
+                                    const buffer3Df &u_change, const buffer3Df &v_change, const buffer3Df &w_change,
+                                    float coeff);
+    void accumulateField(buffer3Df &field_init, const buffer3Df &field_change);
+
 private:
     uint   CellNumberX, CellNumberY, CellNumberZ;
     float  CellSize;
@@ -86,7 +101,7 @@ private:
     float* TempY;
     float* TempZ;
 
-    gpuMapper *GpuSolver;
+    gpuMapper *gpuSolver;
 };
 
 #endif //BIMOCQ_MAPPING_H

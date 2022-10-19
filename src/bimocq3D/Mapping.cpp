@@ -282,26 +282,26 @@ void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, gpuMap
     BlendCoeff = coeff;
     TotalReinitCount = 0;
 
-    GpuSolver = mymapper;
+    gpuSolver = mymapper;
 
     uint bufferSize = CellNumberX * CellNumberY * CellNumberZ * sizeof(float);
-    GpuSolver->allocGPUBuffer((void**)&ForwardX, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&ForwardY, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&ForwardZ, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&ForwardX, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&ForwardY, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&ForwardZ, bufferSize);
 
-    GpuSolver->allocGPUBuffer((void**)&BackwardX, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&BackwardY, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&BackwardZ, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&BackwardX, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&BackwardY, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&BackwardZ, bufferSize);
 
-    GpuSolver->allocGPUBuffer((void**)&BackwardXPrev, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&BackwardYPrev, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&BackwardZPrev, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&BackwardXPrev, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&BackwardYPrev, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&BackwardZPrev, bufferSize);
 
-    GpuSolver->allocGPUBuffer((void**)&InitX, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&InitY, bufferSize);
-    GpuSolver->allocGPUBuffer((void**)&InitZ, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&InitX, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&InitY, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&InitZ, bufferSize);
 
-    GpuSolver->allocGPUBuffer((void**)&Distortion, bufferSize);
+    gpuSolver->allocGPUBuffer((void**)&Distortion, bufferSize);
 
     TempX = new float[bufferSize];
     TempY = new float[bufferSize];
@@ -322,21 +322,21 @@ void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, gpuMap
          
     });
 
-    GpuSolver->copyHostToDevice(TempX, InitX, bufferSize);
-    GpuSolver->copyHostToDevice(TempY, InitY, bufferSize);
-    GpuSolver->copyHostToDevice(TempZ, InitZ, bufferSize);
+    gpuSolver->copyHostToDevice(TempX, InitX, bufferSize);
+    gpuSolver->copyHostToDevice(TempY, InitY, bufferSize);
+    gpuSolver->copyHostToDevice(TempZ, InitZ, bufferSize);
 
-    GpuSolver->copyHostToDevice(InitX, ForwardX, bufferSize);
-    GpuSolver->copyHostToDevice(InitY, ForwardY, bufferSize);
-    GpuSolver->copyHostToDevice(InitZ, ForwardZ, bufferSize);
+    gpuSolver->copyHostToDevice(InitX, ForwardX, bufferSize);
+    gpuSolver->copyHostToDevice(InitY, ForwardY, bufferSize);
+    gpuSolver->copyHostToDevice(InitZ, ForwardZ, bufferSize);
 
-    GpuSolver->copyDeviceToDevice(InitX, BackwardX, bufferSize);
-    GpuSolver->copyDeviceToDevice(InitY, BackwardY, bufferSize);
-    GpuSolver->copyDeviceToDevice(InitZ, BackwardZ, bufferSize);
+    gpuSolver->copyDeviceToDevice(InitX, BackwardX, bufferSize);
+    gpuSolver->copyDeviceToDevice(InitY, BackwardY, bufferSize);
+    gpuSolver->copyDeviceToDevice(InitZ, BackwardZ, bufferSize);
 
-    GpuSolver->copyDeviceToDevice(ForwardX, BackwardXPrev, bufferSize);
-    GpuSolver->copyDeviceToDevice(ForwardY, BackwardYPrev, bufferSize);
-    GpuSolver->copyDeviceToDevice(ForwardZ, BackwardZPrev, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardX, BackwardXPrev, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardY, BackwardYPrev, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardZ, BackwardZPrev, bufferSize);
 
     //delete TempX;
     //delete TempY;
@@ -360,7 +360,7 @@ void MapperBaseGPU::updateBackward(float *velocityU, float *velocityV, float *ve
         {
             substep = dt - T;
         }
-        GpuSolver->solveBackwardDMC(velocityU, velocityV, velocityW, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, substep);
+        gpuSolver->solveBackwardDMC(velocityU, velocityV, velocityW, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, substep);
 
         T += substep;
     }
@@ -368,40 +368,40 @@ void MapperBaseGPU::updateBackward(float *velocityU, float *velocityV, float *ve
 
 void MapperBaseGPU::updateForward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt)
 {
-    GpuSolver->solveForward(velocityU, velocityV, velocityW, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+    gpuSolver->solveForward(velocityU, velocityV, velocityW, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
 }
 
 void MapperBaseGPU::advectVelocity(float *velocityU, float *velocityV, float *velocityW,
                         float *velocityUInit, float *velocityVInit, float *velocityWInit,
                         float *velocityUPrev, float *velocityVPrev, float *velocityWPrev)
 {
-    GpuSolver->advectVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+    gpuSolver->advectVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
-    GpuSolver->compensateVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+    gpuSolver->compensateVelocity(velocityU, velocityV, velocityW, velocityUInit, velocityVInit, velocityWInit, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
     if (TotalReinitCount != 0)
     {
-        GpuSolver->advectVelocityDouble(velocityU, velocityV, velocityW, velocityUPrev, velocityVPrev, velocityWPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, BlendCoeff);
+        gpuSolver->advectVelocityDouble(velocityU, velocityV, velocityW, velocityUPrev, velocityVPrev, velocityWPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, BlendCoeff);
     }
     else
     {
-        GpuSolver->advectVelocityDouble(velocityU, velocityV, velocityW, velocityUPrev, velocityVPrev, velocityWPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.f);
+        gpuSolver->advectVelocityDouble(velocityU, velocityV, velocityW, velocityUPrev, velocityVPrev, velocityWPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.f);
     }
 }
 
 void MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev)
 {
-    GpuSolver->advectField(field, fieldInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+    gpuSolver->advectField(field, fieldInit, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
-    GpuSolver->compensateField(field, fieldInit, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
+    gpuSolver->compensateField(field, fieldInit, ForwardX, ForwardY, ForwardZ, BackwardX, BackwardY, BackwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false);
 
     if (TotalReinitCount != 0)
     {
-        GpuSolver->advectFieldDouble(field, fieldPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, BlendCoeff);
+        gpuSolver->advectFieldDouble(field, fieldPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, BlendCoeff);
     }
     else
     {
-        GpuSolver->advectFieldDouble(field, fieldPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.f);
+        gpuSolver->advectFieldDouble(field, fieldPrev, BackwardX, BackwardY, BackwardZ, BackwardXPrev, BackwardYPrev, BackwardZPrev, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.f);
     }
 }
 
@@ -409,7 +409,7 @@ void MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev
 //{
 //    float time = 0.f;
 //
-//    GpuSolver->estimateDistortionCUDA(Distortion, BackwardX, BackwardY, BackwardZ, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ);
+//    gpuSolver->estimateDistortionCUDA(Distortion, BackwardX, BackwardY, BackwardZ, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ);
 //
 //    
 //
@@ -418,27 +418,126 @@ void MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev
 
 void MapperBaseGPU::accumulateVelocity(float *duInit, float *dvInit, float *dwInit, float *uChange, float *vChange, float *wChange, float coeff)
 {
-    GpuSolver->accumulateVelocity(uChange, vChange, wChange, duInit, dvInit, dwInit, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, coeff);
+    gpuSolver->accumulateVelocity(uChange, vChange, wChange, duInit, dvInit, dwInit, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, coeff);
 }
 
 void MapperBaseGPU::accumulateField(float *dfieldInit, float *fieldChange)
 {
-    GpuSolver->accumulateField(fieldChange, dfieldInit, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.0f);
+    gpuSolver->accumulateField(fieldChange, dfieldInit, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.0f);
 }
 
 void MapperBaseGPU::reinitializeMapping()
 {
     uint bufferSize = CellNumberX * CellNumberY * CellNumberZ * sizeof(float);
 
-    GpuSolver->copyDeviceToDevice(BackwardXPrev, BackwardX, bufferSize);
-    GpuSolver->copyDeviceToDevice(BackwardYPrev, BackwardY, bufferSize);
-    GpuSolver->copyDeviceToDevice(BackwardZPrev, BackwardZ, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardXPrev, BackwardX, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardYPrev, BackwardY, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardZPrev, BackwardZ, bufferSize);
 
-    GpuSolver->copyDeviceToDevice(BackwardX, InitX, bufferSize);
-    GpuSolver->copyDeviceToDevice(BackwardY, InitY, bufferSize);
-    GpuSolver->copyDeviceToDevice(BackwardZ, InitZ, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardX, InitX, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardY, InitY, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardZ, InitZ, bufferSize);
 
-    GpuSolver->copyDeviceToDevice(ForwardX, InitX, bufferSize);
-    GpuSolver->copyDeviceToDevice(ForwardY, InitY, bufferSize);
-    GpuSolver->copyDeviceToDevice(ForwardZ, InitZ, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardX, InitX, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardY, InitY, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardZ, InitZ, bufferSize);
+}
+
+// Test code
+void MapperBaseGPU::updateMapping(const buffer3Df &un, const buffer3Df &vn, const buffer3Df &wn, float cfldt, float dt)
+{
+    gpuSolver->copyHostToDevice(un, gpuSolver->u_host, gpuSolver->u, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(vn, gpuSolver->v_host, gpuSolver->v, CellNumberX*(CellNumberY+1)*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(wn, gpuSolver->w_host, gpuSolver->w, CellNumberX*CellNumberY*(CellNumberZ+1)*sizeof(float));
+
+    updateBackward(gpuSolver->u, gpuSolver->v, gpuSolver->w, cfldt, dt);
+
+    updateForward(gpuSolver->u, gpuSolver->v, gpuSolver->w, cfldt, dt);
+}
+
+void MapperBaseGPU::advectVelocity(buffer3Df &un, buffer3Df &vn, buffer3Df &wn,
+                                const buffer3Df &u_init, const buffer3Df &v_init, const buffer3Df &w_init,
+                                const buffer3Df &u_prev, const buffer3Df &v_prev, const buffer3Df &w_prev)
+{
+    gpuSolver->copyHostToDevice(un, gpuSolver->u_host, gpuSolver->u, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(vn, gpuSolver->v_host, gpuSolver->v, CellNumberX*(CellNumberY+1)*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(wn, gpuSolver->w_host, gpuSolver->w, CellNumberX*CellNumberY*(CellNumberZ+1)*sizeof(float));
+
+    gpuSolver->copyHostToDevice(u_init, gpuSolver->u_host, gpuSolver->du, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(v_init, gpuSolver->v_host, gpuSolver->dv, CellNumberX*(CellNumberY+1)*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(w_init, gpuSolver->w_host, gpuSolver->dw, CellNumberX*CellNumberY*(CellNumberZ+1)*sizeof(float));
+
+    gpuSolver->copyHostToDevice(u_prev, gpuSolver->u_host, gpuSolver->u_src, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(v_prev, gpuSolver->v_host, gpuSolver->v_src, CellNumberX*(CellNumberY+1)*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(w_prev, gpuSolver->w_host, gpuSolver->w_src, CellNumberX*CellNumberY*(CellNumberZ+1)*sizeof(float));
+
+    advectVelocity(gpuSolver->u, gpuSolver->v, gpuSolver->w, gpuSolver->du, gpuSolver->dv, gpuSolver->dw, gpuSolver->u_src, gpuSolver->v_src, gpuSolver->w_src);
+
+    gpuSolver->copyDeviceToHost(un, gpuSolver->u_host, gpuSolver->u);
+    gpuSolver->copyDeviceToHost(vn, gpuSolver->v_host, gpuSolver->v);
+    gpuSolver->copyDeviceToHost(wn, gpuSolver->w_host, gpuSolver->w);
+}
+
+void MapperBaseGPU::advectField(buffer3Df &field, const buffer3Df &field_init, const buffer3Df &field_prev)
+{
+    gpuSolver->copyHostToDevice(field, gpuSolver->u_host, gpuSolver->u, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(field_init, gpuSolver->u_host, gpuSolver->du, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(field_prev, gpuSolver->u_host, gpuSolver->u_src, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+
+    advectField(gpuSolver->u, gpuSolver->du, gpuSolver->u_src);
+
+    gpuSolver->copyDeviceToHost(field, gpuSolver->u_host, gpuSolver->u);
+}
+
+float MapperBaseGPU::estimateDistortion(const buffer3Dc &boundary)
+{
+    gpuSolver->estimateDistortionCUDA(gpuSolver->du, BackwardX, BackwardY, BackwardZ, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ);
+    cudaMemcpy(gpuSolver->u_host, gpuSolver->du, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float), cudaMemcpyDeviceToHost);
+
+    float max_dist = 0.f;
+    for (uint i = 0; i < CellNumberX; i++)
+    {
+        for (uint j = 0; j < CellNumberY; j++)
+        {
+            for (uint k = 0; k < CellNumberZ; k++)
+            {
+                if (boundary(i,j,k) != 2)
+                {
+                    uint index = i + CellNumberX*j + CellNumberX * CellNumberY * k;
+                    max_dist = max(max_dist, gpuSolver->u_host[index]);
+                }
+            }
+        }
+    }
+    
+    return sqrt(max_dist);
+}
+
+void MapperBaseGPU::accumulateVelocity(buffer3Df &u_init, buffer3Df &v_init, buffer3Df &w_init,
+                                    const buffer3Df &u_change, const buffer3Df &v_change, const buffer3Df &w_change,
+                                    float coeff)
+{
+    gpuSolver->copyHostToDevice(u_init, gpuSolver->u_host, gpuSolver->du, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(v_init, gpuSolver->v_host, gpuSolver->dv, CellNumberX*(CellNumberY+1)*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(w_init, gpuSolver->w_host, gpuSolver->dw, CellNumberX*CellNumberY*(CellNumberZ+1)*sizeof(float));
+    
+    gpuSolver->copyHostToDevice(u_change, gpuSolver->u_host, gpuSolver->u, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(v_change, gpuSolver->v_host, gpuSolver->v, CellNumberX*(CellNumberY+1)*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(w_change, gpuSolver->w_host, gpuSolver->w, CellNumberX*CellNumberY*(CellNumberZ+1)*sizeof(float));
+
+    accumulateVelocity(gpuSolver->du, gpuSolver->dv, gpuSolver->dw, gpuSolver->u, gpuSolver->v, gpuSolver->w, coeff);
+
+    gpuSolver->copyDeviceToHost(u_init, gpuSolver->u_host, gpuSolver->du);
+    gpuSolver->copyDeviceToHost(v_init, gpuSolver->v_host, gpuSolver->dv);
+    gpuSolver->copyDeviceToHost(w_init, gpuSolver->w_host, gpuSolver->dw);
+}
+
+void MapperBaseGPU::accumulateField(buffer3Df &field_init, const buffer3Df &field_change)
+{
+    gpuSolver->copyHostToDevice(field_init, gpuSolver->u_host, gpuSolver->du, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+    gpuSolver->copyHostToDevice(field_change, gpuSolver->u_host, gpuSolver->u, (CellNumberX+1)*CellNumberY*CellNumberZ*sizeof(float));
+
+    accumulateField(gpuSolver->du, gpuSolver->u);
+
+    gpuSolver->copyDeviceToHost(field_init, gpuSolver->u_host, gpuSolver->du);
 }
