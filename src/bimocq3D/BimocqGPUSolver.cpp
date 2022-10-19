@@ -1,6 +1,6 @@
 #include "BimocqGPUSolver.h"
 
-BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, VirtualGpuMapper *mymapper)
+BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, gpuMapper *mymapper)
 {
     CellNumberX = nx;
     CellNumberY = ny;
@@ -112,11 +112,13 @@ void BimocqGPUSolver::advance(int framenum, float dt)
     emitSmoke(framenum, dt);
     addBuoyancy(dt);
 
+    GpuSolver->copyDeviceToHost(output_u, host_u, VelocityU);
+
     if (Viscosity)
     {
-        diffuseField(VelocityU, CellNumberX + 1, CellNumberY, CellNumberZ, Viscosity, dt);
-        diffuseField(VelocityV, CellNumberX, CellNumberY + 1, CellNumberZ, Viscosity, dt);
-        diffuseField(VelocityW, CellNumberX, CellNumberY, CellNumberZ + 1, Viscosity, dt);
+        diffuseField(VelocityU, VelocityUTemp, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, dt);
+        diffuseField(VelocityV, VelocityVTemp, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, dt);
+        diffuseField(VelocityW, VelocityWTemp, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, dt);
     }
     
     // calculate velocity change due to external forces(e.g. buoyancy)
@@ -129,8 +131,6 @@ void BimocqGPUSolver::advance(int framenum, float dt)
     GpuSolver->copyDeviceToDevice(VelocityWTemp, VelocityW, VelocityBufferSizeZ);
 
     projection();
-
-    GpuSolver->copyDeviceToHost(output_u, host_u, VelocityU);
 
     GpuSolver->copyDeviceToDevice(duProj, VelocityU, VelocityBufferSizeX);
     GpuSolver->copyDeviceToDevice(dvProj, VelocityV, VelocityBufferSizeY);
@@ -236,11 +236,11 @@ void BimocqGPUSolver::addBuoyancy(float dt)
     GpuSolver->add_buoyancy(VelocityV, Density, Temperature, CellNumberX, CellNumberY, CellNumberZ, _alpha, _beta, dt);
 }
 
-void BimocqGPUSolver::diffuseField(float *field, int ni, int nj, int nk, float nu, float dt)
+void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, int iter, float nu, float dt)
 {
     float coef = nu * (dt / (CellSize * CellSize));
 
-    GpuSolver->diffuseField(field, ni, nj, nk, coef);
+    GpuSolver->diffuseField(field, fieldTemp, ni, nj, nk, iter, coef);
 }
 
 void BimocqGPUSolver::projection()

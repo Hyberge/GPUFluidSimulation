@@ -50,7 +50,7 @@ public:
     MapperBaseGPU() = default;
     ~MapperBaseGPU() = default;
 
-    void init(uint ni, uint nj, uint nk, float h, float coeff, VirtualGpuMapper *mymapper);
+    void init(uint ni, uint nj, uint nk, float h, float coeff, gpuMapper *mymapper);
 
     void updateForward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt);
     void updateBackward(float *velocityU, float *velocityV, float *velocityW, float cfldt, float dt);
@@ -86,7 +86,7 @@ private:
     float* TempY;
     float* TempZ;
 
-    VirtualGpuMapper *GpuSolver;
+    gpuMapper *GpuSolver;
 };
 
 #endif //BIMOCQ_MAPPING_H

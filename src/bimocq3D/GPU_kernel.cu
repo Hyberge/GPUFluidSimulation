@@ -831,7 +831,7 @@ extern "C" void gpu_add_buoyancy(float *field, float* density, float* temperatur
     add_buoyancy_kernel<<<numBlocks, blocksize>>>(field, density, temperature, ni, nj+1, nk, alpha, beta, dt);
 }
 
-__global__ void diffuse_field_kernel(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+__global__ void diffuse_field_kernel(float *field_in, float* field_out, int ni, int nj, int nk, float coef)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -839,25 +839,39 @@ __global__ void diffuse_field_kernel(float *field, float* fieldTemp, int ni, int
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        float value = field[index];
-        float value0 = field[k*ni*nj + j*ni + i - 1];
-        float value1 = field[k*ni*nj + j*ni + i + 1];
-        float value2 = field[k*ni*nj + (j - 1)*ni + i];
-        float value3 = field[k*ni*nj + (j + 1)*ni + i];
-        float value4 = field[(k - 1)*ni*nj + j*ni + i];
-        float value5 = field[(k + 1)*ni*nj + j*ni + i];
+        float value = field_in[index];
+        float value0 = field_in[k*ni*nj + j*ni + i - 1];
+        float value1 = field_in[k*ni*nj + j*ni + i + 1];
+        float value2 = field_in[k*ni*nj + (j - 1)*ni + i];
+        float value3 = field_in[k*ni*nj + (j + 1)*ni + i];
+        float value4 = field_in[(k - 1)*ni*nj + j*ni + i];
+        float value5 = field_in[(k + 1)*ni*nj + j*ni + i];
 
-        fieldTemp[index] = (value + coef*(value0 + value1 + value2 + value3 + value4 + value5)) / (1.0f + 6.0f*coef);
+        field_out[index] = (value + coef*(value0 + value1 + value2 + value3 + value4 + value5)) / (1.0f + 6.0f*coef);
     }
     __syncthreads();
 }
 
-extern "C" void gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef)
+extern "C" void gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, int iter, float coef)
 {
     int blocksize = 256;
-    int number = ni * (nj + 1) * nk;
+    int number = ni * nj * nk;
     int numBlocks = (number + 255)/256;
-    diffuse_field_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, ni, nj, nk, coef);
+
+    float *in = field;
+    float *out = fieldTemp;
+    for (int i = 0; i < iter; i++)
+    {
+        diffuse_field_kernel<<<numBlocks, blocksize>>>(in, out, ni, nj, nk, coef);
+
+        float *temp = out;
+        out = in;
+        in = temp;
+    }
+    if (out == field)
+    {
+        cudaMemcpy(fieldTemp, field, number * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
 }
 
 __global__ void add_field_kernel(float *out, float *field1, float *field2, float coeff)

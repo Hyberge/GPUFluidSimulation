@@ -24,7 +24,7 @@
 class BimocqGPUSolver {
 public:
     BimocqGPUSolver() = default;
-    BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, VirtualGpuMapper *mymapper);
+    BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, gpuMapper *mymapper);
     ~BimocqGPUSolver() = default;
 
     void advance(int framenum, float dt);
@@ -37,7 +37,7 @@ public:
 
     void addBuoyancy(float dt);
 
-    void diffuseField(float *field, int ni, int nj, int nk, float nu, float dt);
+    void diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, int iter, float nu, float dt);
 
     void projection();
 
@@ -94,7 +94,7 @@ public:
     uint VelocityBufferSizeZ = 0;
     uint ScaleFieldSize = 0;
 
-    VirtualGpuMapper *GpuSolver;
+    gpuMapper *GpuSolver;
 
     MapperBaseGPU VelocityAdvector;
     MapperBaseGPU ScalarAdvector;

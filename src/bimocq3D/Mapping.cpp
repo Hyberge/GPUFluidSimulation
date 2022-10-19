@@ -273,7 +273,7 @@ void MapperBase::reinitializeMapping()
 /*
     class MapperBaseGPU.
 */
-void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, VirtualGpuMapper *mymapper)
+void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, gpuMapper *mymapper)
 {
     CellNumberX = ni;
     CellNumberY = nj;
@@ -416,12 +416,12 @@ void MapperBaseGPU::advectField(float *field, float *fieldInit, float *fieldPrev
 //    return time;
 //}
 
-void MapperBaseGPU::accumulateVelocity(float *uChange, float *vChange, float *wChange,float *duInit, float *dvInit, float *dwInit,  float coeff)
+void MapperBaseGPU::accumulateVelocity(float *duInit, float *dvInit, float *dwInit, float *uChange, float *vChange, float *wChange, float coeff)
 {
     GpuSolver->accumulateVelocity(uChange, vChange, wChange, duInit, dvInit, dwInit, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, coeff);
 }
 
-void MapperBaseGPU::accumulateField(float *fieldChange, float *dfieldInit)
+void MapperBaseGPU::accumulateField(float *dfieldInit, float *fieldChange)
 {
     GpuSolver->accumulateField(fieldChange, dfieldInit, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.0f);
 }

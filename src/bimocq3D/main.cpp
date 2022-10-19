@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 	    ni = 100;
 	    nj = 200;
 	    nk = 200;
-	    total_frame = 10;
+	    total_frame = 300;
 	    // length in x direction
 	    L = 0.2f;
 	    // grid size for simulation
@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
     }
     boost::filesystem::create_directories(filepath);
 
-#if 0
+#if 1
 	auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
 	BimocqSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);
 	mysolver.setSmoke(smoke_rise, smoke_drop, emitter_list);

@@ -134,6 +134,10 @@ public:
     // initialize advector
     MapperBase VelocityAdvector;
     MapperBase ScalarAdvector;
+
+    MapperBaseGPU VelocityAdvectorGpu;
+    MapperBaseGPU ScalarAdvectorGpu;
+
     gpuMapper *gpuSolver;
     int vel_lastReinit = 0;
     int scalar_lastReinit = 0;

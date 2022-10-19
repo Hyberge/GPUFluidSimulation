@@ -80,7 +80,7 @@ extern "C" void gpu_emit_smoke(float *u, float *v, float *w, float *rho, float *
 extern "C" void gpu_add_buoyancy(float *field, float* density, float* temperature,
                             int ni, int nj, int nk, float alpha, float beta, float dt);
 
-extern "C" void gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, float coef);
+extern "C" void gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, int iter, float coef);
 
 extern "C" void gpu_add_field(float *out, float *field1, float *field2, float coeff, int number);
 
@@ -149,12 +149,11 @@ public:
     float *dv;
     float *dw;
 
-
-
     float *u_host;
     float *v_host;
     float *w_host;
 
+    cudaEvent_t start, stop;
 
     void init(int nx, int ny, int nz, float h)
     {
@@ -203,6 +202,27 @@ public:
             printf("No CUDA Capable devices found, exiting...\n");
             exit(EXIT_SUCCESS);
         }
+    }
+
+    void startEventRecord()
+    {
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+
+        cudaEventRecord(start, 0);
+    }
+
+    float endEventRecord()
+    {
+        cudaEventRecord(stop, 0);
+        cudaEventSynchronize(stop);
+
+        float kernelTime;
+        cudaEventElapsedTime(&kernelTime, start, stop);
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+
+        return kernelTime;
     }
 
     void copyHostToDevice(const buffer3Df &field, float *host_field, float *device_field, size_t device_size)
@@ -257,9 +277,20 @@ public:
         });
     }
 
+    void copyHostToDevice(float *host_field, float *device_field, size_t size)
+    {
+         cudaMemcpy(device_field, host_field, size, cudaMemcpyHostToDevice);
+    }
+
+    void copyDeviceToDevice(float *dst, float *src, size_t size)
+    {
+         cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice);
+    }
+
     void allocGPUBuffer(void ** buffer, size_t size)
     {
         cudaMalloc(buffer, size);
+        cudaMemset(buffer, 0, sizeof(float) * size);
     }
 
     void solveForward(float cfl_dt, float dt)
@@ -355,115 +386,32 @@ public:
         gpu_estimate_distortion(du, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk);
     }
 
-    void emitSmoke(float *u, float *v, float *w, float *rho, float *T,
-                    float h, int ni, int nj, int nk, 
-                    float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
-    {
-        gpu_emit_smoke(u, v, w, rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature, emiter);
-    }
+    //void emitSmoke(float *u, float *v, float *w, float *rho, float *T,
+    //                float h, int ni, int nj, int nk, 
+    //                float centerX, float centerY, float centerZ, float radius, float density, float temperature, float emiter)
+    //{
+    //    gpu_emit_smoke(u, v, w, rho, T, h, ni, nj, nk, centerX, centerY, centerZ, radius, density, temperature, emiter);
+    //}
 
-    void projectionJacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
-    {
-        cudaMemset(div, 0, sizeof(float)*ni*nj*nk);
-        cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
-        cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
-        gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
-    }
-};
+    //void add_buoyancy(float *field, float* density, float* temperature,
+    //                int ni, int nj, int nk, float alpha, float beta, float dt)
+    //{
+    //    gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta, dt);
+    //}
 
-class VirtualGpuMapper
-{
-public:
-    VirtualGpuMapper() {}
-    VirtualGpuMapper(int ni, int nj, int nk)
-    {
-        cudaInit();
+    //void diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, int iter, float coef)
+    //{
+    //    gpu_diffuse_field(field, fieldTemp, ni, nj, nk, iter, coef);
+    //    cudaMemcpy(field, fieldTemp, ni * nj * nk * sizeof(float), cudaMemcpyDeviceToDevice);
+    //}
 
-        allocGPUBuffer((void**)&u_temp, (ni+1)*nj*nk*sizeof(float));
-        allocGPUBuffer((void**)&v_temp, ni*(nj+1)*nk*sizeof(float));
-        allocGPUBuffer((void**)&w_temp, ni*nj*(nk+1)*sizeof(float));
-
-        allocGPUBuffer((void**)&x_temp, ni*nj*nk*sizeof(float));
-        allocGPUBuffer((void**)&y_temp, ni*nj*nk*sizeof(float));
-        allocGPUBuffer((void**)&z_temp, ni*nj*nk*sizeof(float));
-    }
-    ~VirtualGpuMapper() {}
-
-    void cudaInit()
-    {
-        int devID;
-
-        // use command-line specified CUDA device, otherwise use device with highest Gflops/s
-        devID = findCudaDevice(0, NULL);
-
-        if (devID < 0)
-        {
-            printf("No CUDA Capable devices found, exiting...\n");
-            exit(EXIT_SUCCESS);
-        }
-    }
-
-    void startEventRecord()
-    {
-        cudaEventCreate(&start);
-        cudaEventCreate(&stop);
-
-        cudaEventRecord(start, 0);
-    }
-
-    float endEventRecord()
-    {
-        cudaEventRecord(stop, 0);
-        cudaEventSynchronize(stop);
-
-        float kernelTime;
-        cudaEventElapsedTime(&kernelTime, start, stop);
-        cudaEventDestroy(start);
-        cudaEventDestroy(stop);
-
-        return kernelTime;
-    }
-
-    void copyHostToDevice(float *host_field, float *device_field, size_t size)
-    {
-         cudaMemcpy(device_field, host_field, size, cudaMemcpyHostToDevice);
-    }
-
-    void copyDeviceToHost(buffer3Df &field, float *host_field, float *device_field)
-    {
-        size_t size = sizeof(float)*field._nx*field._ny*field._nz;
-        cudaMemcpy(host_field, device_field, size, cudaMemcpyDeviceToHost);
-
-        int compute_elements = field._blockx*field._blocky*field._blockz;
-        int slice = field._blockx*field._blocky;
-        tbb::parallel_for(0, compute_elements, 1, [&](uint thread_idx) {
-
-            uint bk = thread_idx/slice;
-            uint bj = (thread_idx%slice)/field._blockx;
-            uint bi = thread_idx%(field._blockx);
-
-            for (uint kk=0;kk<8;kk++)for(uint jj=0;jj<8;jj++)for(uint ii=0;ii<8;ii++)
-            {
-                uint i=bi*8+ii, j=bj*8+jj, k=bk*8+kk;
-                if(i<field._nx && j<field._ny && k<field._nz)
-                {
-                    int index = i + field._nx*j + field._nx * field._ny * k;
-                    field(i,j,k) = host_field[index];
-                }
-            }
-        });
-    }
-
-    void copyDeviceToDevice(float *dst, float *src, size_t size)
-    {
-         cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice);
-    }
-
-    void allocGPUBuffer(void ** buffer, size_t size)
-    {
-        cudaMalloc(buffer, size);
-        cudaMemset(buffer, 0, sizeof(float) * size);
-    }
+    //void projectionJacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+    //{
+    //    cudaMemset(div, 0, sizeof(float)*ni*nj*nk);
+    //    cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
+    //    cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
+    //    gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
+    //}
 
     void solveForward(float *u, float *v, float *w,
         float *x_fwd, float *y_fwd, float *z_fwd,
@@ -476,11 +424,11 @@ public:
         float *x_in_out, float *y_in_out, float *z_in_out,
         float h, int ni, int nj, int nk, float substep)
     {
-        gpu_solve_backwardDMC(u, v, w, x_in_out, y_in_out, z_in_out, x_temp, y_temp, z_temp, h, ni, nj, nk, substep);
+        gpu_solve_backwardDMC(u, v, w, x_in_out, y_in_out, z_in_out, x_out, y_out, z_out, h, ni, nj, nk, substep);
 
-        copyDeviceToDevice(x_in_out, x_temp, ni*nj*nk*sizeof(float));
-        copyDeviceToDevice(y_in_out, y_temp, ni*nj*nk*sizeof(float));
-        copyDeviceToDevice(z_in_out, z_temp, ni*nj*nk*sizeof(float));
+        copyDeviceToDevice(x_in_out, x_out, ni*nj*nk*sizeof(float));
+        copyDeviceToDevice(y_in_out, y_out, ni*nj*nk*sizeof(float));
+        copyDeviceToDevice(z_in_out, z_out, ni*nj*nk*sizeof(float));
 
     }
 
@@ -511,10 +459,10 @@ public:
                             float *backward_x, float *backward_y, float *backward_z,
                             float h, int ni, int nj, int nk, bool is_point)
     {
-        cudaMemset(u_temp, 0, sizeof(float)*(ni+1)*nj*nk);
-        cudaMemset(v_temp, 0, sizeof(float)*ni*(nj+1)*nk);
-        cudaMemset(w_temp, 0, sizeof(float)*ni*nj*(nk+1));
-        gpu_compensate_velocity(u, v, w, du, dv, dw, u_temp, v_temp, w_temp, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
+        cudaMemset(u_src, 0, sizeof(float)*(ni+1)*nj*nk);
+        cudaMemset(v_src, 0, sizeof(float)*ni*(nj+1)*nk);
+        cudaMemset(w_src, 0, sizeof(float)*ni*nj*(nk+1));
+        gpu_compensate_velocity(u, v, w, du, dv, dw, u_src, v_src, w_src, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
     }
 
     void advectField(float *field, float *field_init,
@@ -538,8 +486,8 @@ public:
                          float *backward_x, float *backward_y, float *backward_z,
                          float h, int ni, int nj, int nk, bool is_point)
     {
-        cudaMemset(u_temp, 0, sizeof(float)*(ni+1)*nj*nk);
-        gpu_compensate_field(u, du, u_temp, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
+        cudaMemset(u_src, 0, sizeof(float)*(ni+1)*nj*nk);
+        gpu_compensate_field(u, du, u_src, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
     }
 
     void semilagAdvectVelocity(float *u, float *v, float *w,
@@ -585,16 +533,11 @@ public:
         gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta, dt);
     }
 
-    void diffuseField(float *field, int ni, int nj, int nk, float coef)
+    void diffuseField(float *field, float *fieldTmp, int ni, int nj, int nk, int iter, float coef)
     {
-        gpu_diffuse_field(field, x_temp, ni, nj, nk, coef);
+        gpu_diffuse_field(field, fieldTmp, ni, nj, nk, iter, coef);
 
-        copyDeviceToDevice(field, x_temp, ni * nj * nk * sizeof(float));
-    }
-
-    void add(float *field1, float *field2, float coeff, int number)
-    {
-        gpu_add(field1, field2, coeff, number);
+        copyDeviceToDevice(field, fieldTmp, ni * nj * nk * sizeof(float));
     }
 
     void addFields(float* out, float *field1, float *field2, float coeff, int number)
@@ -633,13 +576,6 @@ public:
         cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
         gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
     }
-
-private:
-
-    cudaEvent_t start, stop;
-
-    float *x_temp, *y_temp, *z_temp;
-    float *u_temp, *v_temp, *w_temp;
 };
 
 #endif //GPU_ADVECTION_H

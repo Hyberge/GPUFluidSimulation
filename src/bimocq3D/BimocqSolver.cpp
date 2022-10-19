@@ -1,5 +1,7 @@
 #include "BimocqSolver.h"
 
+#define GPU_TEST 1
+
 BimocqSolver::BimocqSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, Scheme myscheme, gpuMapper *mymapper)
 {
     _nx = nx;
@@ -460,6 +462,15 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
 
 void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
 {
+#if GPU_TEST
+    // u is big enough.
+    gpuSolver->copyHostToDevice(field, gpuSolver->u_host, gpuSolver->u, field._nx * field._nx * field._nx * sizeof(float));
+
+    float coef = nu * (dt / (_h * _h));
+    gpuSolver->diffuseField(gpuSolver->u, gpuSolver->u_src, field._nx ,field._nx ,field._nx, 20, coef);
+
+    gpuSolver->copyDeviceToHost(field, gpuSolver->u_host, gpuSolver->u);
+#else
     buffer3Df field_temp;
     field_temp.init(field._nx, field._ny, field._nz, field._hx, 0,0,0);
     field_temp.setZero();
@@ -515,6 +526,7 @@ void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
     }
     field.copy(field_temp);
     field_temp.free();
+#endif
 }
 
 void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
@@ -595,7 +607,7 @@ float BimocqSolver::semilagAdvect(float cfldt, float dt)
 
 void BimocqSolver::emitSmoke(int framenum, float dt)
 {
-#if 0
+#if GPU_TEST
     sim_emitter[0].update(framenum, _h, dt);
     sim_emitter[1].update(framenum, _h, dt);
     if (framenum < sim_emitter[0].emitFrame)
@@ -742,6 +754,15 @@ void BimocqSolver::emitSmoke(int framenum, float dt)
 
 void BimocqSolver::addBuoyancy(float dt)
 {
+#if GPU_TEST
+    gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(_rho, gpuSolver->x_host, gpuSolver->du, _nx*(_ny+1)*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(_T, gpuSolver->y_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
+
+    gpuSolver->add_buoyancy(gpuSolver->v, gpuSolver->du, gpuSolver->dv, _nx, _ny, _nz, _alpha, _beta, dt);
+
+    gpuSolver->copyDeviceToHost(_vn, gpuSolver->v_host, gpuSolver->v);
+#else
     int compute_elements = _rho._blockx*_rho._blocky*_rho._blockz;
     int slice = _rho._blockx*_rho._blocky;
 
@@ -783,6 +804,7 @@ void BimocqSolver::addBuoyancy(float dt)
             }
         }
     });
+#endif
 }
 
 void BimocqSolver::setSmoke(float drop, float raise, const std::vector<Emitter> &emitters)
@@ -1009,7 +1031,7 @@ float BimocqSolver::getCFL()
 
 void BimocqSolver::projection()
 {
-#if 0
+#if GPU_TEST
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
