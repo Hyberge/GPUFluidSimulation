@@ -279,18 +279,22 @@ public:
 
     void copyHostToDevice(float *host_field, float *device_field, size_t size)
     {
-         cudaMemcpy(device_field, host_field, size, cudaMemcpyHostToDevice);
+         cudaError_t ret = cudaMemcpy(device_field, host_field, size, cudaMemcpyHostToDevice);
+         if (ret != cudaSuccess)
+            cout << "cuda Error: " << ret << endl;
     }
 
     void copyDeviceToDevice(float *dst, float *src, size_t size)
     {
-         cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice);
+         cudaError_t ret = cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice);
+         if (ret != cudaSuccess)
+            cout << "cuda Error: " << ret << endl;
     }
 
     void allocGPUBuffer(void ** buffer, size_t size)
     {
         cudaMalloc(buffer, size);
-        cudaMemset(buffer, 0, sizeof(float) * size);
+        cudaMemset(buffer, 0, size);
     }
 
     void solveForward(float cfl_dt, float dt)
@@ -300,9 +304,9 @@ public:
 
     void solveBackwardDMC(float substep)
     {
-        cudaMemcpy(x_out, x_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
-        cudaMemcpy(y_out, y_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
-        cudaMemcpy(z_out, z_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
+        //cudaMemcpy(x_out, x_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
+        //cudaMemcpy(y_out, y_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
+        //cudaMemcpy(z_out, z_in, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
         gpu_solve_backwardDMC(u, v, w, x_in, y_in, z_in, x_out, y_out, z_out, _hx, ni, nj, nk, substep);
         cudaMemcpy(x_in, x_out, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);
         cudaMemcpy(y_in, y_out, sizeof(float)*ni*nj*nk, cudaMemcpyDeviceToDevice);

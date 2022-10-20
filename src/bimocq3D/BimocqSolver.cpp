@@ -1,7 +1,7 @@
 #include "BimocqSolver.h"
 
 #define GPU_Test 1
-#define GPU_Mapping_Test (GPU_Test && 1)
+#define GPU_Mapping_Test (GPU_Test && 0)
 
 BimocqSolver::BimocqSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, Scheme myscheme, gpuMapper *mymapper)
 {
@@ -98,6 +98,17 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
     cout << YELLOW << "[ CFL number is: " << max_v*dt/_h << " ] " << RESET << endl;
 
 #if GPU_Mapping_Test
+    float VelocityDistortionTest = VelocityAdvectorGpu.estimateDistortion(_b_desc) / (max_v * dt);
+    cout << "[ Velocity Distortion Test == " << VelocityDistortionTest << " ]"  << endl;
+    if (VelocityDistortionTest < 0)
+        velocityReinitialize();
+#else
+    float VelocityDistortionTest = VelocityAdvector.estimateDistortion(_b_desc) / (max_v * dt);
+    cout << "[ Velocity Distortion Test == " << VelocityDistortionTest << " ]"  << endl;
+    if (VelocityDistortionTest < 0)
+        velocityReinitialize();
+#endif
+#if GPU_Mapping_Test
     VelocityAdvectorGpu.updateMapping(_un, _vn, _wn, cfldt, dt);
     ScalarAdvectorGpu.updateMapping(_un, _vn, _wn, cfldt, dt);
 #else
@@ -108,6 +119,8 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
 
     semilagAdvect(cfldt, dt);
     cout << "[ Semilag Advect Fields Done! ]"  << endl;
+
+    //gpuSolver->copyDeviceToHost(_debug, gpuSolver->x_host, VelocityAdvectorGpu.InitX);
 
 #if GPU_Mapping_Test
     VelocityAdvectorGpu.advectVelocity(_un, _vn, _wn, _uinit, _vinit, _winit, _uprev, _vprev, _wprev);
@@ -205,22 +218,25 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
         VelocityAdvectorGpu.reinitializeMapping();
         velocityReinitialize();
         VelocityAdvectorGpu.accumulateVelocity(_uinit, _vinit, _winit, _duproj, _dvproj, _dwproj, 1.f);
+        cout << RED << "[ Bimocq Velocity Re-initialize, total reinitialize count: " << VelocityAdvectorGpu.TotalReinitCount << ". ]" << RESET << endl;
 #else
         VelocityAdvector.reinitializeMapping();
         velocityReinitialize();
         VelocityAdvector.accumulateVelocity(_uinit, _vinit, _winit, _duproj, _dvproj, _dwproj, 1.f);
-#endif
         cout << RED << "[ Bimocq Velocity Re-initialize, total reinitialize count: " << VelocityAdvector.total_reinit_count << ". ]" << RESET << endl;
+#endif
     }
     if (scalarReinit)
     {
 #if GPU_Mapping_Test
         ScalarAdvectorGpu.reinitializeMapping();
+        scalarReinitialize();
+        cout << RED << "[ Bimocq Scalar Re-initialize, total reinitialize count: " << ScalarAdvectorGpu.TotalReinitCount << " ]" << RESET << endl;
 #else
         ScalarAdvector.reinitializeMapping();
-#endif
         scalarReinitialize();
         cout << RED << "[ Bimocq Scalar Re-initialize, total reinitialize count: " << ScalarAdvector.total_reinit_count << " ]" << RESET << endl;
+#endif
     }
 }
 

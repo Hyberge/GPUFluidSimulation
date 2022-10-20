@@ -303,9 +303,10 @@ void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, gpuMap
 
     gpuSolver->allocGPUBuffer((void**)&Distortion, bufferSize);
 
-    TempX = new float[bufferSize];
-    TempY = new float[bufferSize];
-    TempZ = new float[bufferSize];
+    uint arraySize = CellNumberX * CellNumberY * CellNumberZ;
+    TempX = new float[arraySize];
+    TempY = new float[arraySize];
+    TempZ = new float[arraySize];
     tbb::parallel_for(0, (int)CellNumberZ, 1, [&](int thread_idx) {
 
         int k = thread_idx;
@@ -326,17 +327,17 @@ void MapperBaseGPU::init(uint ni, uint nj, uint nk, float h, float coeff, gpuMap
     gpuSolver->copyHostToDevice(TempY, InitY, bufferSize);
     gpuSolver->copyHostToDevice(TempZ, InitZ, bufferSize);
 
-    gpuSolver->copyHostToDevice(InitX, ForwardX, bufferSize);
-    gpuSolver->copyHostToDevice(InitY, ForwardY, bufferSize);
-    gpuSolver->copyHostToDevice(InitZ, ForwardZ, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardX, InitX, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardY, InitY, bufferSize);
+    gpuSolver->copyDeviceToDevice(ForwardZ, InitZ, bufferSize);
 
-    gpuSolver->copyDeviceToDevice(InitX, BackwardX, bufferSize);
-    gpuSolver->copyDeviceToDevice(InitY, BackwardY, bufferSize);
-    gpuSolver->copyDeviceToDevice(InitZ, BackwardZ, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardX, InitX, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardY, InitY, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardZ, InitZ, bufferSize);
 
-    gpuSolver->copyDeviceToDevice(ForwardX, BackwardXPrev, bufferSize);
-    gpuSolver->copyDeviceToDevice(ForwardY, BackwardYPrev, bufferSize);
-    gpuSolver->copyDeviceToDevice(ForwardZ, BackwardZPrev, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardXPrev, InitX, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardYPrev, InitY, bufferSize);
+    gpuSolver->copyDeviceToDevice(BackwardZPrev, InitZ, bufferSize);
 
     //delete TempX;
     //delete TempY;
@@ -428,6 +429,8 @@ void MapperBaseGPU::accumulateField(float *dfieldInit, float *fieldChange)
 
 void MapperBaseGPU::reinitializeMapping()
 {
+    TotalReinitCount ++;
+
     uint bufferSize = CellNumberX * CellNumberY * CellNumberZ * sizeof(float);
 
     gpuSolver->copyDeviceToDevice(BackwardXPrev, BackwardX, bufferSize);
@@ -504,7 +507,9 @@ float MapperBaseGPU::estimateDistortion(const buffer3Dc &boundary)
                 if (boundary(i,j,k) != 2)
                 {
                     uint index = i + CellNumberX*j + CellNumberX * CellNumberY * k;
-                    max_dist = max(max_dist, gpuSolver->u_host[index]);
+                    //max_dist = max(max_dist, gpuSolver->u_host[index]);
+                    if (gpuSolver->u_host[index] > max_dist)
+                        max_dist = gpuSolver->u_host[index];
                 }
             }
         }
