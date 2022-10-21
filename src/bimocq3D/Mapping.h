@@ -84,7 +84,7 @@ public:
                                     float coeff);
     void accumulateField(buffer3Df &field_init, const buffer3Df &field_change);
 
-private:
+public:
     uint   CellNumberX, CellNumberY, CellNumberZ;
     float  CellSize;
     float  BlendCoeff;      // phi_t = blend_coeff * phi_curr + (1 - blend_coeff) * phi_prev

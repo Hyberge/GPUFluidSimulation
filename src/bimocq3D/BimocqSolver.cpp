@@ -1,7 +1,7 @@
 #include "BimocqSolver.h"
 
 #define GPU_Test 1
-#define GPU_Mapping_Test (GPU_Test && 0)
+#define GPU_Mapping_Test (GPU_Test && 1)
 
 BimocqSolver::BimocqSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, Scheme myscheme, gpuMapper *mymapper)
 {
@@ -1380,7 +1380,7 @@ void BimocqSolver::projection()
 
 void BimocqSolver::outputResult(uint frame, string filepath)
 {
-    writeVDB(frame + 1, filepath, _h, _rho);
+    writeVDB(frame + 1, filepath, _h, _un);
     int boundary_index = 0;
     for (auto &b : sim_boundary)
     {

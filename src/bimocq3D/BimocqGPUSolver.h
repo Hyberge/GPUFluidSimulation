@@ -99,8 +99,8 @@ public:
     MapperBaseGPU VelocityAdvector;
     MapperBaseGPU ScalarAdvector;
 
-    int vel_lastReinit = 0;
-    int scalar_lastReinit = 0;
+    int vel_lastReinit = -11;
+    int scalar_lastReinit = -31;
 
     std::vector<Emitter> sim_emitter;
 };
