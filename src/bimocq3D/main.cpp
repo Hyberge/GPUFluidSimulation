@@ -104,8 +104,8 @@ int main(int argc, char** argv) {
     }
     boost::filesystem::create_directories(filepath);
 
-#if 1
 	auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
+#if 0
 	BimocqSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);
 	mysolver.setSmoke(smoke_rise, smoke_drop, emitter_list);
     mysolver.setBoundary(boundary_list);
@@ -117,7 +117,6 @@ int main(int argc, char** argv) {
         mysolver.outputResult(i, filepath);
     }
 #else
-    auto *myGPUmapper = new VirtualGpuMapper();
     BimocqGPUSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, myGPUmapper);
     mysolver.setSmoke(smoke_drop, smoke_rise, emitter_list);
     for (uint i = 0; i < total_frame; i++)
