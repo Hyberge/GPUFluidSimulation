@@ -424,7 +424,7 @@ void MapperBaseGPU::accumulateVelocity(float *duInit, float *dvInit, float *dwIn
 
 void MapperBaseGPU::accumulateField(float *dfieldInit, float *fieldChange)
 {
-    gpuSolver->accumulateField(dfieldInit, fieldChange, ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.0f);
+    gpuSolver->accumulateField(fieldChange, dfieldInit , ForwardX, ForwardY, ForwardZ, CellSize, CellNumberX, CellNumberY, CellNumberZ, false, 1.0f);
 }
 
 void MapperBaseGPU::reinitializeMapping()
