@@ -24,10 +24,14 @@
 class BimocqGPUSolver {
 public:
     BimocqGPUSolver() = default;
-    BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, gpuMapper *mymapper);
+    BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, Scheme inScheme, gpuMapper *mymapper);
     ~BimocqGPUSolver() = default;
 
     void advance(int framenum, float dt);
+
+    void advanceBimocq(int framenum, float dt);
+
+    void advanceReflection(int framenum, float dt);
 
     void semilagAdvect(float cfldt, float dt);
 
@@ -55,6 +59,8 @@ public:
     float _alpha;
     float _beta;
 
+    Scheme myscheme;
+
     // AMGPCG solver data
     SparseMatrixd matrix;
     std::vector<double> rhs;
@@ -74,7 +80,7 @@ public:
     float *duProj = nullptr, *dvProj = nullptr, *dwProj = nullptr;
     float *duExtern = nullptr, *dvExtern = nullptr, *dwExtern = nullptr;
 
-    //float *TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
+    float *TempSrcU = nullptr, *TempSrcV = nullptr, *TempSrcW = nullptr;
 
     float *Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr, *DensityExtern = nullptr;
     float *Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr, *TemperatureExtern = nullptr;

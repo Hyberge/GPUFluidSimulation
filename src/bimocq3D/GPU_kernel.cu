@@ -984,3 +984,74 @@ extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div,
     gradient_kernel<<<numBlocks, blocksize>>>(w, p_out, ni, nj, nk + 1, 0, 0, 1, halfrdx);
 }
 // jacobi iteration end
+
+__global__ void clamp_extrema_kernel(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, float h, float dt)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i<ni&& j<nj && k<nk)
+    {
+        float3 point = make_float3(h*float(i),h*float(j),h*float(k));
+
+        float3 vel = getVelocity(u, v, w, h, ni, nj, nk, point);
+
+        float halfdt = 0.5f * dt;
+        float3 px = make_float3(point.x - vel.x*halfdt, point.y - vel.y*halfdt, point.z - vel.z*halfdt);
+
+        vel = getVelocity(u, v, w, h, ni, nj, nk, px);
+        px = make_float3(point.x - vel.x*dt, point.y - vel.y*dt, point.z - vel.z*dt);
+
+        int grid_i = (int)floor(px.x);
+		int grid_j = (int)floor(px.y);
+		int grid_k = (int)floor(px.z);
+
+        float cx = px.x - (float)grid_i;
+		float cy = px.y - (float)grid_j;
+		float cz = px.z - (float)grid_k;
+
+        float v0 = field[grid_k * nj * ni + grid_j * ni + grid_i];
+        float v1 = field[grid_k * nj * ni + grid_j * ni + grid_i + 1];
+        float v2 = field[grid_k * nj * ni + (grid_j+1) * ni + grid_i];
+        float v3 = field[grid_k * nj * ni + (grid_j+1) * ni + grid_i + 1];
+        float v4 = field[(grid_k+1) * nj * ni + grid_j * ni + grid_i];
+        float v5 = field[(grid_k+1) * nj * ni + grid_j * ni + grid_i + 1];
+        float v6 = field[(grid_k+1) * nj * ni + (grid_j+1) * ni + grid_i];
+        float v7 = field[(grid_k+1) * nj * ni + (grid_j+1) * ni + grid_i + 1];
+
+        float min_value = min(v0,min(v1,min(v2,min(v3,min(v4,min(v5,min(v6,v7)))))));
+        float max_value = max(v0,max(v1,max(v2,max(v3,max(v4,max(v5,max(v6,v7)))))));
+
+        float temp = fieldTemp[grid_k * nj * ni + grid_j * ni + grid_i];
+        if (temp < min_value || temp > max_value)
+        {
+            float iv1 = lerp(lerp(v0, v1, cx), lerp(v2, v3, cx), cy);
+            float iv2 = lerp(lerp(v4, v5, cx), lerp(v6, v7, cx), cy);
+
+            fieldTemp[grid_k * nj * ni + grid_j * ni + grid_i] = lerp(iv1, iv2, cz);
+        }
+    }
+}
+
+extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, float h, float dt)
+{
+    int blocksize = 256;
+    int number = ni * nj * nk;
+    int numBlocks = (number + 255)/256;
+    clamp_extrema_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, u, v, w, ni, nj, nk, h, dt);
+}
+
+__global__ void mad_kernel(float *field, float *field1, float *field2, float coeff1, float coeff2)
+{
+    unsigned int i = blockIdx.x *blockDim.x + threadIdx.x;
+    field[i] = coeff1*field1[i] + coeff2*field2[i];
+    __syncthreads();
+}
+
+extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1, float coeff2, int number)
+{
+    int blocksize = 256;
+    int numBlocks = (number + 255)/256;
+    mad_kernel<<<numBlocks, blocksize>>>(field, field1, field2, coeff1, coeff2);
+}

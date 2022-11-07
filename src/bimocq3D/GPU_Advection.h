@@ -86,6 +86,10 @@ extern "C" void gpu_add_field(float *out, float *field1, float *field2, float co
 
 extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta);
 
+extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, float h, float dt);
+
+extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1, float coeff2, int number);
+
 class gpuMapper{
 public:
     gpuMapper(){}
@@ -384,6 +388,11 @@ public:
         gpu_add(field1, field2, coeff, number);
     }
 
+    void mad(float *field, float *field1, float *field2, float coeff1, float coeff2, int number)
+    {
+        gpu_mad(field, field1, field2, coeff1, coeff2, number);
+    }
+
     void estimateDistortionCUDA()
     {
         cudaMemset(du, 0, sizeof(float)*(ni+1)*nj*nk);
@@ -494,25 +503,18 @@ public:
         gpu_compensate_field(u, du, u_src, forward_x, forward_y, forward_z, backward_x, backward_y, backward_z, h, ni, nj, nk, is_point);
     }
 
-    void semilagAdvectVelocity(float *u, float *v, float *w,
-                            float *u_out, float *v_out, float *w_out,
+    void semilagAdvectVelocity(float *u_out, float *v_out, float *w_out,
+                            float *u_src, float *v_src, float *W_src,
+                            float *u, float *v, float *w,
                             float h, int ni, int nj, int nk, float cfldt, float dt)
     {
-        //copyDeviceToDevice(u_temp, u, sizeof(float)*(ni+1)*nj*nk);
-        //copyDeviceToDevice(v_temp, v, sizeof(float)*ni*(nj+1)*nk);
-        //copyDeviceToDevice(w_temp, w, sizeof(float)*ni*nj*(nk+1));
-        //
-        //cudaMemset(u_out, 0, sizeof(float)*(ni+1)*nj*nk);
-        //cudaMemset(v_out, 0, sizeof(float)*ni*(nj+1)*nk);
-        //cudaMemset(w_out, 0, sizeof(float)*ni*nj*(nk+1));
-        //
-        //gpu_semilag(u_out, u_temp, velocityU, velocityV, velocityW, 1, 0, 0, h, ni, nj, nk, cfldt, dt);
-        //gpu_semilag(v_out, v_temp, velocityU, velocityV, velocityW, 0, 1, 0, h, ni, nj, nk, cfldt, dt);
-        //gpu_semilag(w_out, w_temp, velocityU, velocityV, velocityW, 0, 0, 1, h, ni, nj, nk, cfldt, dt);
-
-        gpu_semilag(u_out, u, u, v, w, 1, 0, 0, h, ni, nj, nk, cfldt, dt);
-        gpu_semilag(v_out, v, u, v, w, 0, 1, 0, h, ni, nj, nk, cfldt, dt);
-        gpu_semilag(w_out, w, u, v, w, 0, 0, 1, h, ni, nj, nk, cfldt, dt);
+        cudaMemset(u_out, 0, sizeof(float)*(ni+1)*nj*nk);
+        cudaMemset(v_out, 0, sizeof(float)*ni*(nj+1)*nk);
+        cudaMemset(w_out, 0, sizeof(float)*ni*nj*(nk+1));
+        
+        gpu_semilag(u_out, u_src, u, v, w, 1, 0, 0, h, ni, nj, nk, cfldt, dt);
+        gpu_semilag(v_out, v_src, u, v, w, 0, 1, 0, h, ni, nj, nk, cfldt, dt);
+        gpu_semilag(w_out, w_src, u, v, w, 0, 0, 1, h, ni, nj, nk, cfldt, dt);
     }
 
     void semilagAdvectField(float *field, float *field_src,
@@ -579,6 +581,11 @@ public:
         cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
         cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
         gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
+    }
+
+    void clampExtrema(float *field, float *fieldTemp, float *u, float *v, float *w, float h, int ni, int nj, int nk, float dt)
+    {
+        gpu_clamp_extrema(field, fieldTemp, u, v, w, ni, nj, nk, h, dt);
     }
 };
 

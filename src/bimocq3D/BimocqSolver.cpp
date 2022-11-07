@@ -1,8 +1,5 @@
 #include "BimocqSolver.h"
 
-#define GPU_Test 1
-#define GPU_Mapping_Test (GPU_Test && 1)
-
 BimocqSolver::BimocqSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, Scheme myscheme, gpuMapper *mymapper)
 {
     _nx = nx;
@@ -97,17 +94,6 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
     if (framenum == 0) max_v = _h;
     cout << YELLOW << "[ CFL number is: " << max_v*dt/_h << " ] " << RESET << endl;
 
-#if GPU_Mapping_Test
-    float VelocityDistortionTest = VelocityAdvectorGpu.estimateDistortion(_b_desc) / (max_v * dt);
-    cout << "[ Velocity Distortion Test == " << VelocityDistortionTest << " ]"  << endl;
-    if (VelocityDistortionTest < 0)
-        velocityReinitialize();
-#else
-    float VelocityDistortionTest = VelocityAdvector.estimateDistortion(_b_desc) / (max_v * dt);
-    cout << "[ Velocity Distortion Test == " << VelocityDistortionTest << " ]"  << endl;
-    if (VelocityDistortionTest < 0)
-        velocityReinitialize();
-#endif
 #if GPU_Mapping_Test
     VelocityAdvectorGpu.updateMapping(_un, _vn, _wn, cfldt, dt);
     ScalarAdvectorGpu.updateMapping(_un, _vn, _wn, cfldt, dt);
@@ -209,6 +195,9 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
     ScalarAdvector.accumulateField(_rhoinit, _drhoextern);
     ScalarAdvector.accumulateField(_Tinit, _dTextern);
 #endif
+
+    _debug.copy(VelocityAdvector.backward_x);
+    _debug_u.copy(_uinit);
 
     cout << "[ Accumulate Fields Done! ]" << endl;
 
@@ -397,7 +386,7 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     // clamp extrema, clamped new density will be in GPU.dv
     clampExtrema(dt, _rho, _rhotemp);
     _rho.copy(_rhotemp);
-    cout << "[ Reflection Advect Density Done wit GPU time: " << time <<" ]" << endl;
+    cout << "[ Reflection Advect Density Done! ]" << endl;
 
     // advect Temperature
     gpuSolver->copyHostToDevice(_T, gpuSolver->x_host, gpuSolver->dv, _nx*(_ny+1)*_nz*sizeof(float));
@@ -412,7 +401,7 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     // clamp extrema, clamped new temperature will be in GPU.dv
     clampExtrema(dt, _T, _Ttemp);
     _T.copy(_Ttemp);
-    cout << "[ Reflection Advect Temperature Done wit GPU time: " << time <<" ]" << endl;
+    cout << "[ Reflection Advect Temperature Done! ]" << endl;
 
     clearBoundary(_rho);
 
@@ -443,7 +432,7 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     _un.copy(_utemp);
     _vn.copy(_vtemp);
     _wn.copy(_wtemp);
-    cout << "[ Reflection Advect Velocity First Half Done wit GPU time: " << time <<" ]" << endl;
+    cout << "[ Reflection Advect Velocity First Half Done! ]" << endl;
 
     emitSmoke(framenum, dt);
     addBuoyancy(0.5f*dt);
@@ -501,7 +490,7 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     _un.copy(_utemp);
     _vn.copy(_vtemp);
     _wn.copy(_wtemp);
-    cout << "[ Reflection Advect Velocity Second Half Done wit GPU time: " << time <<" ]" << endl;
+    cout << "[ Reflection Advect Velocity Second Half Done! ]" << endl;
 
     addBuoyancy(0.5f*dt);
 
@@ -587,6 +576,18 @@ void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
 
 void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
 {
+#if 1
+    gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
+
+    gpuSolver->copyHostToDevice(f_n, gpuSolver->u_host, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float));
+    gpuSolver->copyHostToDevice(f_np1, gpuSolver->u_host, gpuSolver->u_src, (_nx+1)*_ny*_nz*sizeof(float));
+
+    gpuSolver->clampExtrema(gpuSolver->du, gpuSolver->u_src, gpuSolver->u, gpuSolver->v, gpuSolver->w, _h, f_n._nx, f_n._ny, f_n._nz, dt);
+
+    gpuSolver->copyDeviceToHost(f_np1, gpuSolver->u_host, gpuSolver->u_src);
+#else
     int compute_elements = f_np1._blockx*f_np1._blocky*f_np1._blockz;
     int slice = f_np1._blockx*f_np1._blocky;
 
@@ -634,6 +635,7 @@ void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
                     }
                 }
     });
+#endif
 }
 
 float BimocqSolver::semilagAdvect(float cfldt, float dt)
@@ -1380,7 +1382,7 @@ void BimocqSolver::projection()
 
 void BimocqSolver::outputResult(uint frame, string filepath)
 {
-    writeVDB(frame + 1, filepath, _h, _un);
+    writeVDB(frame + 1, filepath, _h, _rho);
     int boundary_index = 0;
     for (auto &b : sim_boundary)
     {

@@ -23,6 +23,9 @@
 
 using namespace std;
 
+#define GPU_Test 0
+#define GPU_Mapping_Test (GPU_Test && 1)
+
 enum Scheme {BIMOCQ, SEMILAG, MACCORMACK, MAC_REFLECTION};
 
 class Emitter{

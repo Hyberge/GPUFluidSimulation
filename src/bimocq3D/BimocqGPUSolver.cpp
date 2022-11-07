@@ -1,7 +1,9 @@
 #include "BimocqGPUSolver.h"
 
-BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, gpuMapper *mymapper)
+BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_coeff, float blend_coeff, Scheme inScheme, gpuMapper *mymapper)
 {
+    myscheme = inScheme;
+    
     CellNumberX = nx;
     CellNumberY = ny;
     CellNumberZ = nz;
@@ -39,9 +41,9 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
     GpuSolver->allocGPUBuffer((void**)&dvExtern, VelocityBufferSizeY);
     GpuSolver->allocGPUBuffer((void**)&dwExtern, VelocityBufferSizeZ);
 
-    //GpuSolver->allocGPUBuffer((void**)&TempSrcU, VelocityBufferSizeX);
-    //GpuSolver->allocGPUBuffer((void**)&TempSrcV, VelocityBufferSizeY);
-    //GpuSolver->allocGPUBuffer((void**)&TempSrcW, VelocityBufferSizeZ);
+    GpuSolver->allocGPUBuffer((void**)&TempSrcU, VelocityBufferSizeX);
+    GpuSolver->allocGPUBuffer((void**)&TempSrcV, VelocityBufferSizeY);
+    GpuSolver->allocGPUBuffer((void**)&TempSrcW, VelocityBufferSizeZ);
 
     GpuSolver->allocGPUBuffer((void**)&Density, ScaleFieldSize);
     GpuSolver->allocGPUBuffer((void**)&DensityInit, ScaleFieldSize);
@@ -75,14 +77,33 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
 
 void BimocqGPUSolver::advance(int framenum, float dt)
 {
+    GpuSolver->startEventRecord();
+
+    switch (myscheme)
+    {
+    case BIMOCQ:
+        advanceBimocq(framenum, dt);
+        break;
+    case MAC_REFLECTION:
+        advanceReflection(framenum, dt);
+        break;
+    default:
+        break;
+    }
+
+    float time = GpuSolver->endEventRecord();
+
+    cout << "[Bimocq GPU Time: " << time << "ms ]" << endl;
+}
+
+void BimocqGPUSolver::advanceBimocq(int framenum, float dt)
+{
     if (framenum == 0) MaxVelocity = CellSize;
     
     float proj_coeff = 2.f;
     bool velReinit = false;
     bool scalarReinit = false;
     float cfldt = getCFL();
-
-    GpuSolver->startEventRecord();
 
     VelocityAdvector.updateMapping(VelocityU, VelocityV, VelocityW, cfldt, dt);
     ScalarAdvector.updateMapping(VelocityU, VelocityV, VelocityW, cfldt, dt);
@@ -92,6 +113,9 @@ void BimocqGPUSolver::advance(int framenum, float dt)
     VelocityAdvector.advectVelocity(VelocityU, VelocityV, VelocityW, VelocityUInit, VelocityVInit, VelocityWInit, VelocityUPrev, VelocityVPrev, VelocityWPrev);
     ScalarAdvector.advectField(Density, DensityInit, DensityPrev);
     ScalarAdvector.advectField(Temperature, TemperatureInit, TemperaturePrev);
+
+    //GpuSolver->copyDeviceToHost(output_density, host_density, Density);
+    //GpuSolver->copyDeviceToHost(output_u, host_u, VelocityU);
 
     // no sim_boundary 
     //time += blendBoundary(VelocityU, VelocityUTemp);
@@ -104,9 +128,6 @@ void BimocqGPUSolver::advance(int framenum, float dt)
     GpuSolver->copyDeviceToDevice(VelocityVTemp, VelocityV, VelocityBufferSizeY);
     GpuSolver->copyDeviceToDevice(VelocityWTemp, VelocityW, VelocityBufferSizeZ);
     
-    GpuSolver->copyDeviceToDevice(DensityTemp, Density, ScaleFieldSize);
-    GpuSolver->copyDeviceToDevice(TemperatureTemp, Temperature, ScaleFieldSize);
-
     // not need
     //clearBoundary(Density);
 
@@ -130,6 +151,9 @@ void BimocqGPUSolver::advance(int framenum, float dt)
     GpuSolver->copyDeviceToDevice(VelocityWTemp, VelocityW, VelocityBufferSizeZ);
 
     projection();
+
+    GpuSolver->copyDeviceToDevice(DensityTemp, Density, ScaleFieldSize);
+    GpuSolver->copyDeviceToDevice(TemperatureTemp, Temperature, ScaleFieldSize);
 
     GpuSolver->copyDeviceToDevice(duProj, VelocityU, VelocityBufferSizeX);
     GpuSolver->copyDeviceToDevice(dvProj, VelocityV, VelocityBufferSizeY);
@@ -173,15 +197,117 @@ void BimocqGPUSolver::advance(int framenum, float dt)
         ScalarAdvector.reinitializeMapping();
         scalarReinitialize();
     }
+}
 
-    float time = GpuSolver->endEventRecord();
+void BimocqGPUSolver::advanceReflection(int framenum, float dt)
+{
+    float cfldt = getCFL();
 
-    cout << "[Bimocq GPU Time: " << time << "ms ]" << endl;
+    {
+        GpuSolver->semilagAdvectField(DensityTemp, Density, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+
+        GpuSolver->semilagAdvectField(TempSrcU, DensityTemp, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+
+        GpuSolver->add(DensityTemp, TempSrcU, -0.5f, CellNumberX*CellNumberY*CellNumberZ);
+        GpuSolver->add(DensityTemp, Density, 0.5f, CellNumberX*CellNumberY*CellNumberZ);
+
+        GpuSolver->clampExtrema(Density, DensityTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, dt);
+
+        GpuSolver->copyDeviceToDevice(Density, DensityTemp, ScaleFieldSize);
+    }
+
+    {
+        GpuSolver->semilagAdvectField(TemperatureTemp, Temperature, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+
+        GpuSolver->semilagAdvectField(TempSrcU, TemperatureTemp, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+
+        GpuSolver->add(TemperatureTemp, TempSrcU, -0.5f, CellNumberX*CellNumberY*CellNumberZ);
+        GpuSolver->add(TemperatureTemp, Temperature, 0.5f, CellNumberX*CellNumberY*CellNumberZ);
+
+        GpuSolver->clampExtrema(Temperature, TemperatureTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, dt);
+
+        GpuSolver->copyDeviceToDevice(Temperature, TemperatureTemp, ScaleFieldSize);
+    }
+
+    //GpuSolver->clearBoundary();
+
+    {
+        GpuSolver->semilagAdvectVelocity(VelocityUTemp, VelocityVTemp, VelocityWTemp, VelocityU, VelocityV, VelocityW, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, -0.5f*dt);
+        
+        GpuSolver->semilagAdvectVelocity(TempSrcU, TempSrcV, TempSrcW, VelocityUTemp, VelocityVTemp, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, 0.5f*dt);
+
+        GpuSolver->add(VelocityUTemp, TempSrcU, -0.5f, (CellNumberX+1) * CellNumberY * CellNumberZ);
+        GpuSolver->add(VelocityVTemp, TempSrcV, -0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
+        GpuSolver->add(VelocityWTemp, TempSrcW, -0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
+        GpuSolver->add(VelocityUTemp, VelocityU, 0.5f, (CellNumberX+1) * CellNumberY * CellNumberZ);
+        GpuSolver->add(VelocityVTemp, VelocityV, 0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
+        GpuSolver->add(VelocityWTemp, VelocityW, 0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
+
+        GpuSolver->clampExtrema(VelocityU, VelocityUTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX+1, CellNumberY, CellNumberZ, 0.5f*dt);
+        GpuSolver->clampExtrema(VelocityV, VelocityVTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY+1, CellNumberZ, 0.5f*dt);
+        GpuSolver->clampExtrema(VelocityW, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ+1, 0.5f*dt);
+
+        GpuSolver->copyDeviceToDevice(VelocityU, VelocityUTemp, VelocityBufferSizeX);
+        GpuSolver->copyDeviceToDevice(VelocityV, VelocityVTemp, VelocityBufferSizeY);
+        GpuSolver->copyDeviceToDevice(VelocityW, VelocityWTemp, VelocityBufferSizeZ);
+    }
+
+    emitSmoke(framenum, dt);
+    addBuoyancy(0.5f*dt);
+
+    if (Viscosity)
+    {
+        diffuseField(VelocityU, VelocityUTemp, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityV, VelocityVTemp, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityW, VelocityWTemp, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, 0.5f*dt);
+    }
+    else
+    {
+        GpuSolver->copyDeviceToDevice(VelocityUTemp, VelocityU, VelocityBufferSizeX);
+        GpuSolver->copyDeviceToDevice(VelocityVTemp, VelocityV, VelocityBufferSizeY);
+        GpuSolver->copyDeviceToDevice(VelocityWTemp, VelocityW, VelocityBufferSizeZ);
+    }
+    
+    projection();
+
+    GpuSolver->mad(duProj, VelocityU, VelocityUTemp, 2.f, -1.f, (CellNumberX+1) * CellNumberY * CellNumberZ);
+    GpuSolver->mad(dvProj, VelocityV, VelocityVTemp, 2.f, -1.f, CellNumberX * (CellNumberY+1) * CellNumberZ);
+    GpuSolver->mad(dwProj, VelocityW, VelocityWTemp, 2.f, -1.f, CellNumberX * CellNumberY * (CellNumberZ+1));
+    
+    GpuSolver->semilagAdvectVelocity(VelocityUTemp, VelocityVTemp, VelocityWTemp, duProj, dvProj, dwProj, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, -0.5f*dt);
+
+    GpuSolver->semilagAdvectVelocity(TempSrcU, TempSrcV, TempSrcW, VelocityUTemp, VelocityVTemp, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, 0.5f*dt);
+
+    GpuSolver->add(VelocityUTemp, TempSrcU, -0.5f, (CellNumberX+1) * CellNumberY * CellNumberZ);
+    GpuSolver->add(VelocityVTemp, TempSrcV, -0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
+    GpuSolver->add(VelocityWTemp, TempSrcW, -0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
+
+    GpuSolver->add(VelocityUTemp, duProj, 0.5f, (CellNumberX+1) * CellNumberY * CellNumberZ);
+    GpuSolver->add(VelocityVTemp, dvProj, 0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
+    GpuSolver->add(VelocityWTemp, dwProj, 0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
+
+    GpuSolver->clampExtrema(VelocityU, VelocityUTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX+1, CellNumberY, CellNumberZ, dt);
+    GpuSolver->clampExtrema(VelocityV, VelocityVTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY+1, CellNumberZ, dt);
+    GpuSolver->clampExtrema(VelocityW, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ+1, dt);
+    GpuSolver->copyDeviceToDevice(VelocityU, VelocityUTemp, VelocityBufferSizeX);
+    GpuSolver->copyDeviceToDevice(VelocityV, VelocityVTemp, VelocityBufferSizeY);
+    GpuSolver->copyDeviceToDevice(VelocityW, VelocityWTemp, VelocityBufferSizeZ);
+
+    addBuoyancy(0.5f*dt);
+
+    if (Viscosity)
+    {
+        diffuseField(VelocityU, VelocityUTemp, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityV, VelocityVTemp, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityW, VelocityWTemp, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, 0.5f*dt);
+    }
+
+    projection();
 }
 
 void BimocqGPUSolver::semilagAdvect(float cfldt, float dt)
 {
-    GpuSolver->semilagAdvectVelocity(VelocityU, VelocityV, VelocityW, VelocityUTemp, VelocityVTemp, VelocityWTemp, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+    GpuSolver->semilagAdvectVelocity(VelocityUTemp, VelocityVTemp, VelocityWTemp, VelocityU, VelocityV, VelocityW, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
 
     GpuSolver->semilagAdvectField(DensityTemp, Density, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
 
