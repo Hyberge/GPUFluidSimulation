@@ -985,7 +985,7 @@ extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div,
 }
 // jacobi iteration end
 
-__global__ void clamp_extrema_kernel(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, float h, float dt)
+__global__ void clamp_extrema_kernel(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float h, float dt)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -993,14 +993,17 @@ __global__ void clamp_extrema_kernel(float *field, float *fieldTemp, float *u, f
     int k = index/(ni*nj);
     if (i<ni&& j<nj && k<nk)
     {
-        float3 point = make_float3(h*float(i),h*float(j),h*float(k));
+        float3 point = make_float3(h*(float(i)-ox),h*(float(j)-oy),h*(float(k)-oz));
 
-        float3 vel = getVelocity(u, v, w, h, ni, nj, nk, point);
+        //float3 vel = getVelocity(u, v, w, h, ni, nj, nk, point);
+        float3 vel = getVelocity(u, v, w, h, ni-dimx, nj-dimy, nk-dimz, point);
 
         float halfdt = 0.5f * dt;
         float3 px = make_float3(point.x - vel.x*halfdt, point.y - vel.y*halfdt, point.z - vel.z*halfdt);
 
-        vel = getVelocity(u, v, w, h, ni, nj, nk, px);
+        //vel = getVelocity(u, v, w, h, ni, nj, nk, px);
+        vel = getVelocity(u, v, w, h, ni-dimx, nj-dimy, nk-dimz, px);
+
         px = make_float3(point.x - vel.x*dt, point.y - vel.y*dt, point.z - vel.z*dt);
 
         int grid_i = (int)floor(px.x);
@@ -1034,12 +1037,12 @@ __global__ void clamp_extrema_kernel(float *field, float *fieldTemp, float *u, f
     }
 }
 
-extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, float h, float dt)
+extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float h, float dt)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
     int numBlocks = (number + 255)/256;
-    clamp_extrema_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, u, v, w, ni, nj, nk, h, dt);
+    clamp_extrema_kernel<<<numBlocks, blocksize>>>(field, fieldTemp, u, v, w, ni, nj, nk, dimx, dimy, dimz, ox, oy, oz, h, dt);
 }
 
 __global__ void mad_kernel(float *field, float *field1, float *field2, float coeff1, float coeff2)
