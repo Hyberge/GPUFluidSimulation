@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         // levelset half width, used when blending semi-lagrangian result near the boundary
         half_width = 3.f;
         // simulation scheme, semi-lagrangian, MacCormack, Reflection and BIMOCQ are implemented
-        sim_scheme = BIMOCQ;
+        sim_scheme = MAC_REFLECTION;
         auto vel_func_a = [](Vec3f pos)
         {
             Vec3f center(0.04f, 0.2f, 0.2f);
@@ -84,48 +84,80 @@ int main(int argc, char** argv) {
         sim_scheme = (Scheme)atoi(argv[1]);
     }
 
-    string filepath;
-    switch (sim_scheme)
+    bool isCpu = false;
+    if (argc > 2)
     {
-    case BIMOCQ:
-        filepath = "../Out/0-Bimocq";
-        break;
-    case SEMILAG:
-        filepath = "../Out/1-Semilag";
-        break;
-    case MACCORMACK:
-        filepath = "../Out/2-Maccormack";
-        break;
-    case MAC_REFLECTION:
-        filepath = "../Out/3-Mac_Reflection";
-        break;
-    default:
-        break;
+        isCpu = atoi(argv[2]) > 0;
     }
-    boost::filesystem::create_directories(filepath);
 
-	auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
-#if 0
-	BimocqSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);
-	mysolver.setSmoke(smoke_rise, smoke_drop, emitter_list);
-    mysolver.setBoundary(boundary_list);
-	for (uint i = 0; i < total_frame; i++)
-	{
-        cout << "Frame " << i << " Starts !!!" << std::endl;
-	    mysolver.updateBoundary(i, dt);
-		mysolver.advance(i, dt);
-        mysolver.outputResult(i, filepath);
+    if (isCpu)
+    {
+        string filepath;
+        switch (sim_scheme)
+        {
+        case BIMOCQ:
+            filepath = "../Out/0-Bimocq-Cpu";
+            break;
+        case SEMILAG:
+            filepath = "../Out/1-Semilag-Cpu";
+            break;
+        case MACCORMACK:
+            filepath = "../Out/2-Maccormack-Cpu";
+            break;
+        case MAC_REFLECTION:
+            filepath = "../Out/3-Mac_Reflection-Cpu";
+            break;
+        default:
+            break;
+        }
+        #if GPU_Mapping_Test
+            filepath += "-TestGpu";
+        #endif
+        boost::filesystem::create_directories(filepath);
+
+        auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
+        BimocqSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);
+        mysolver.setSmoke(smoke_rise, smoke_drop, emitter_list);
+        mysolver.setBoundary(boundary_list);
+        for (uint i = 0; i < total_frame; i++)
+        {
+            cout << "Frame " << i << " Starts !!!" << std::endl;
+            mysolver.updateBoundary(i, dt);
+            mysolver.advance(i, dt);
+            mysolver.outputResult(i, filepath);
+        }
     }
-#else
-    BimocqGPUSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, myGPUmapper);
-    mysolver.setSmoke(smoke_drop, smoke_rise, emitter_list);
-    for (uint i = 0; i < total_frame; i++)
-	{
-        cout << "Frame " << i << " Starts !!!" << std::endl;
-		mysolver.advance(i, dt);
-        mysolver.outputResult(i, filepath);
+    else
+    {
+        string filepath;
+        switch (sim_scheme)
+        {
+        case BIMOCQ:
+            filepath = "../Out/0-Bimocq-Gpu";
+            break;
+        case SEMILAG:
+            filepath = "../Out/1-Semilag-Gpu";
+            break;
+        case MACCORMACK:
+            filepath = "../Out/2-Maccormack-Gpu";
+            break;
+        case MAC_REFLECTION:
+            filepath = "../Out/3-Mac_Reflection-Gpu";
+            break;
+        default:
+            break;
+        }
+        boost::filesystem::create_directories(filepath);
+        auto *myGPUmapper = new gpuMapper(ni, nj, nk, h);
+        BimocqGPUSolver mysolver(ni, nj, nk, L, viscosity, mapping_blend_coeff, sim_scheme, myGPUmapper);
+        mysolver.setSmoke(smoke_drop, smoke_rise, emitter_list);
+        for (uint i = 0; i < total_frame; i++)
+        {
+            cout << "Frame " << i << " Starts !!!" << std::endl;
+            mysolver.advance(i, dt);
+            mysolver.outputResult(i, filepath);
+        }
     }
-#endif
 
 	return 0;
 }

@@ -86,7 +86,7 @@ extern "C" void gpu_add_field(float *out, float *field1, float *field2, float co
 
 extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta);
 
-extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, float h, float dt);
+extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float h, float dt);
 
 extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1, float coeff2, int number);
 
@@ -504,7 +504,7 @@ public:
     }
 
     void semilagAdvectVelocity(float *u_out, float *v_out, float *w_out,
-                            float *u_src, float *v_src, float *W_src,
+                            float *u_src, float *v_src, float *w_src,
                             float *u, float *v, float *w,
                             float h, int ni, int nj, int nk, float cfldt, float dt)
     {
@@ -583,9 +583,9 @@ public:
         gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
     }
 
-    void clampExtrema(float *field, float *fieldTemp, float *u, float *v, float *w, float h, int ni, int nj, int nk, float dt)
+    void clampExtrema(float *field, float *fieldTemp, float *u, float *v, float *w, float h, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float dt)
     {
-        gpu_clamp_extrema(field, fieldTemp, u, v, w, ni, nj, nk, h, dt);
+        gpu_clamp_extrema(field, fieldTemp, u, v, w, ni, nj, nk, dimx, dimy, dimz, ox, oy, oz, h, dt);
     }
 };
 

@@ -459,6 +459,9 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     _dvproj -= _vtemp;
     _dwproj -= _wtemp;
 
+    //_debug.copy(_rho);
+    //_debug_w.copy(_dwproj);
+
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
@@ -584,7 +587,7 @@ void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
     gpuSolver->copyHostToDevice(f_n, gpuSolver->u_host, gpuSolver->du, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(f_np1, gpuSolver->u_host, gpuSolver->u_src, (_nx+1)*_ny*_nz*sizeof(float));
 
-    gpuSolver->clampExtrema(gpuSolver->du, gpuSolver->u_src, gpuSolver->u, gpuSolver->v, gpuSolver->w, _h, f_n._nx, f_n._ny, f_n._nz, dt);
+    gpuSolver->clampExtrema(gpuSolver->du, gpuSolver->u_src, gpuSolver->u, gpuSolver->v, gpuSolver->w, _h, f_n._nx, f_n._ny, f_n._nz, f_n._nx - _nx, f_n._ny - _ny, f_n._nz - _nz, f_n._ox, f_n._oy, f_n._oz, dt);
 
     gpuSolver->copyDeviceToHost(f_np1, gpuSolver->u_host, gpuSolver->u_src);
 #else
@@ -1089,7 +1092,7 @@ float BimocqSolver::getCFL()
 
 void BimocqSolver::projection()
 {
-#if GPU_Test
+#if 1//GPU_Test
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
@@ -1099,6 +1102,8 @@ void BimocqSolver::projection()
     gpuSolver->copyDeviceToHost(_un, gpuSolver->u_host, gpuSolver->u);
     gpuSolver->copyDeviceToHost(_vn, gpuSolver->v_host, gpuSolver->v);
     gpuSolver->copyDeviceToHost(_wn, gpuSolver->w_host, gpuSolver->w);
+
+    //gpuSolver->copyDeviceToHost(_debug, gpuSolver->y_host, gpuSolver->y_in);
 #else
     int ni = _nx;
     int nj = _ny;

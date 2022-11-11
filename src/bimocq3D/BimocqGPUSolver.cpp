@@ -204,27 +204,27 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
     float cfldt = getCFL();
 
     {
-        GpuSolver->semilagAdvectField(DensityTemp, Density, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+        GpuSolver->semilagAdvectField(DensityTemp, Density, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, -dt);
 
         GpuSolver->semilagAdvectField(TempSrcU, DensityTemp, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
 
         GpuSolver->add(DensityTemp, TempSrcU, -0.5f, CellNumberX*CellNumberY*CellNumberZ);
         GpuSolver->add(DensityTemp, Density, 0.5f, CellNumberX*CellNumberY*CellNumberZ);
 
-        GpuSolver->clampExtrema(Density, DensityTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, dt);
+        GpuSolver->clampExtrema(Density, DensityTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, 0, 0, 0, 0.f, 0.f, 0.f, dt);
 
         GpuSolver->copyDeviceToDevice(Density, DensityTemp, ScaleFieldSize);
     }
 
     {
-        GpuSolver->semilagAdvectField(TemperatureTemp, Temperature, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
+        GpuSolver->semilagAdvectField(TemperatureTemp, Temperature, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, -dt);
 
         GpuSolver->semilagAdvectField(TempSrcU, TemperatureTemp, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, dt);
 
         GpuSolver->add(TemperatureTemp, TempSrcU, -0.5f, CellNumberX*CellNumberY*CellNumberZ);
         GpuSolver->add(TemperatureTemp, Temperature, 0.5f, CellNumberX*CellNumberY*CellNumberZ);
 
-        GpuSolver->clampExtrema(Temperature, TemperatureTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, dt);
+        GpuSolver->clampExtrema(Temperature, TemperatureTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, 0, 0, 0, 0.f, 0.f, 0.f, dt);
 
         GpuSolver->copyDeviceToDevice(Temperature, TemperatureTemp, ScaleFieldSize);
     }
@@ -243,9 +243,9 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
         GpuSolver->add(VelocityVTemp, VelocityV, 0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
         GpuSolver->add(VelocityWTemp, VelocityW, 0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
 
-        GpuSolver->clampExtrema(VelocityU, VelocityUTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX+1, CellNumberY, CellNumberZ, 0.5f*dt);
-        GpuSolver->clampExtrema(VelocityV, VelocityVTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY+1, CellNumberZ, 0.5f*dt);
-        GpuSolver->clampExtrema(VelocityW, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ+1, 0.5f*dt);
+        GpuSolver->clampExtrema(VelocityU, VelocityUTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX+1, CellNumberY, CellNumberZ, 1, 0, 0, 0.5f, 0.f, 0.f, 0.5f*dt);
+        GpuSolver->clampExtrema(VelocityV, VelocityVTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY+1, CellNumberZ, 0, 1, 0, 0.f, 0.5f, 0.f, 0.5f*dt);
+        GpuSolver->clampExtrema(VelocityW, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ+1, 0, 0, 1, 0.f, 0.f, 0.5f, 0.5f*dt);
 
         GpuSolver->copyDeviceToDevice(VelocityU, VelocityUTemp, VelocityBufferSizeX);
         GpuSolver->copyDeviceToDevice(VelocityV, VelocityVTemp, VelocityBufferSizeY);
@@ -278,6 +278,9 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
 
     GpuSolver->semilagAdvectVelocity(TempSrcU, TempSrcV, TempSrcW, VelocityUTemp, VelocityVTemp, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, 0.5f*dt);
 
+    //GpuSolver->copyDeviceToHost(output_density, host_density, Density);
+    //GpuSolver->copyDeviceToHost(output_w, host_u, VelocityW);
+
     GpuSolver->add(VelocityUTemp, TempSrcU, -0.5f, (CellNumberX+1) * CellNumberY * CellNumberZ);
     GpuSolver->add(VelocityVTemp, TempSrcV, -0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
     GpuSolver->add(VelocityWTemp, TempSrcW, -0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
@@ -286,9 +289,9 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
     GpuSolver->add(VelocityVTemp, dvProj, 0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
     GpuSolver->add(VelocityWTemp, dwProj, 0.5f, CellNumberX * CellNumberY * (CellNumberZ+1));
 
-    GpuSolver->clampExtrema(VelocityU, VelocityUTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX+1, CellNumberY, CellNumberZ, dt);
-    GpuSolver->clampExtrema(VelocityV, VelocityVTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY+1, CellNumberZ, dt);
-    GpuSolver->clampExtrema(VelocityW, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ+1, dt);
+    GpuSolver->clampExtrema(VelocityU, VelocityUTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX+1, CellNumberY, CellNumberZ, 1, 0, 0, 0.5f, 0.f, 0.f, 0.5f*dt);
+    GpuSolver->clampExtrema(VelocityV, VelocityVTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY+1, CellNumberZ, 0, 1, 0, 0.f, 0.5f, 0.f, 0.5f*dt);
+    GpuSolver->clampExtrema(VelocityW, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ+1, 0, 0, 1, 0.f, 0.f, 0.5f, 0.5f*dt);
     GpuSolver->copyDeviceToDevice(VelocityU, VelocityUTemp, VelocityBufferSizeX);
     GpuSolver->copyDeviceToDevice(VelocityV, VelocityVTemp, VelocityBufferSizeY);
     GpuSolver->copyDeviceToDevice(VelocityW, VelocityWTemp, VelocityBufferSizeZ);
@@ -316,28 +319,28 @@ void BimocqGPUSolver::semilagAdvect(float cfldt, float dt)
 
 float BimocqGPUSolver::getCFL()
 {
-    //MaxVelocity = 1e-4;
-    //for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX+1;i++)
-    //{
-    //    if (fabs(VelocityU(i,j,k))>MaxVelocity)
-    //    {
-    //        MaxVelocity = fabs(_un(i,j,k));
-    //    }
-    //}
-    //for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY+1;j++) for (uint i=0; i<CellNumberX;i++)
-    //{
-    //    if (fabs(_vn(i,j,k))>MaxVelocity)
-    //    {
-    //        MaxVelocity = fabs(_vn(i,j,k));
-    //    }
-    //}
-    //for (uint k=0; k<CellNumberZ+1;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX;i++)
-    //{
-    //    if (fabs(_wn(i,j,k))>MaxVelocity)
-    //    {
-    //        MaxVelocity = fabs(_wn(i,j,k));
-    //    }
-    //}
+    MaxVelocity = 1e-4;
+    for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX+1;i++)
+    {
+        if (fabs(output_u(i,j,k))>MaxVelocity)
+        {
+            MaxVelocity = fabs(output_u(i,j,k));
+        }
+    }
+    for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY+1;j++) for (uint i=0; i<CellNumberX;i++)
+    {
+        if (fabs(output_v(i,j,k))>MaxVelocity)
+        {
+            MaxVelocity = fabs(output_v(i,j,k));
+        }
+    }
+    for (uint k=0; k<CellNumberZ+1;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX;i++)
+    {
+        if (fabs(output_w(i,j,k))>MaxVelocity)
+        {
+            MaxVelocity = fabs(output_w(i,j,k));
+        }
+    }
     return CellSize / MaxVelocity;
 }
 
@@ -375,7 +378,7 @@ void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp, int ni, int n
 void BimocqGPUSolver::projection()
 {
 #if 1   // jacobi iteration
-    GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, CellNumberX, CellNumberY, CellNumberZ, 20, 0.5, -1, 1.0 / 6.0);
+    GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, CellNumberX, CellNumberY, CellNumberZ, 50, 0.5, -1, 1.0 / 6.0);
 #else   // AMG solver
 #endif
 }

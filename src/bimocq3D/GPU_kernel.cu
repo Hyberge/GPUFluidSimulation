@@ -938,7 +938,7 @@ __global__ void gradient_kernel(float *field, float *p, int ni, int nj, int nk, 
     int pi = ni - dimx;
     int pj = nj - dimy;
     int pk = nk - dimz;
-    if (i>0 && i<pi&& j>0 && j<pj && k>0 && k<pk)
+    if (i>1 && i<pi&& j>1 && j<pj && k>1 && k<pk)
     {
         float p0 = p[k*pj*pi + j*pi + i];
         float p1 = p[(k-dimz)*pj*pi + (j-dimy)*pi + i - dimx];
@@ -993,7 +993,7 @@ __global__ void clamp_extrema_kernel(float *field, float *fieldTemp, float *u, f
     int k = index/(ni*nj);
     if (i<ni&& j<nj && k<nk)
     {
-        float3 point = make_float3(h*(float(i)-ox),h*(float(j)-oy),h*(float(k)-oz));
+        float3 point = make_float3(h*(float(i)+ox),h*(float(j)+oy),h*(float(k)+oz));
 
         //float3 vel = getVelocity(u, v, w, h, ni, nj, nk, point);
         float3 vel = getVelocity(u, v, w, h, ni-dimx, nj-dimy, nk-dimz, point);
