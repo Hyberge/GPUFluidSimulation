@@ -196,8 +196,8 @@ void BimocqSolver::advanceBimocq(int framenum, float dt)
     ScalarAdvector.accumulateField(_Tinit, _dTextern);
 #endif
 
-    _debug.copy(VelocityAdvector.backward_x);
-    _debug_u.copy(_uinit);
+    //_debug.copy(VelocityAdvector.backward_x);
+    //_debug_u.copy(_uinit);
 
     cout << "[ Accumulate Fields Done! ]" << endl;
 
@@ -459,8 +459,9 @@ void BimocqSolver::advanceReflection(int framenum, float dt)
     _dvproj -= _vtemp;
     _dwproj -= _wtemp;
 
-    //_debug.copy(_rho);
-    //_debug_w.copy(_dwproj);
+    //_debug_u.copy(_un);
+    //_debug_v.copy(_vn);
+    //_debug_w.copy(_wn);
 
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
@@ -515,7 +516,7 @@ void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
     gpuSolver->copyHostToDevice(field, gpuSolver->u_host, gpuSolver->u, field._nx * field._nx * field._nx * sizeof(float));
 
     float coef = nu * (dt / (_h * _h));
-    gpuSolver->diffuseField(gpuSolver->u, gpuSolver->u_src, field._nx ,field._nx ,field._nx, 20, coef);
+    gpuSolver->diffuseField(gpuSolver->u, gpuSolver->u_src, gpuSolver->du, field._nx ,field._nx ,field._nx, 20, coef);
 
     gpuSolver->copyDeviceToHost(field, gpuSolver->u_host, gpuSolver->u);
 #else
@@ -579,7 +580,7 @@ void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
 
 void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
 {
-#if 1
+#if 0
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));
@@ -1065,6 +1066,31 @@ void BimocqSolver::setBoundary(const std::vector<Boundary> &boundaries)
 
 float BimocqSolver::getCFL()
 {
+#if 0
+    max_v = 1e-4;
+    for (uint k=0; k<_nz;k++) for (uint j=0; j<_ny;j++) for (uint i=0; i<_nx+1;i++)
+    {
+        if (fabs(_debug_u(i,j,k))>max_v)
+        {
+            max_v = fabs(_debug_u(i,j,k));
+        }
+    }
+    for (uint k=0; k<_nz;k++) for (uint j=0; j<_ny+1;j++) for (uint i=0; i<_nx;i++)
+    {
+        if (fabs(_debug_v(i,j,k))>max_v)
+        {
+            max_v = fabs(_debug_v(i,j,k));
+        }
+    }
+    for (uint k=0; k<_nz+1;k++) for (uint j=0; j<_ny;j++) for (uint i=0; i<_nx;i++)
+    {
+        if (fabs(_debug_w(i,j,k))>max_v)
+        {
+            max_v = fabs(_debug_w(i,j,k));
+        }
+    }
+    return _h / max_v;
+#else
     max_v = 1e-4;
     for (uint k=0; k<_nz;k++) for (uint j=0; j<_ny;j++) for (uint i=0; i<_nx+1;i++)
     {
@@ -1088,11 +1114,12 @@ float BimocqSolver::getCFL()
         }
     }
     return _h / max_v;
+#endif
 }
 
 void BimocqSolver::projection()
 {
-#if 1//GPU_Test
+#if GPU_Test
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));

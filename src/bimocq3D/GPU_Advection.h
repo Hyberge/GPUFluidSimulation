@@ -80,7 +80,7 @@ extern "C" void gpu_emit_smoke(float *u, float *v, float *w, float *rho, float *
 extern "C" void gpu_add_buoyancy(float *field, float* density, float* temperature,
                             int ni, int nj, int nk, float alpha, float beta, float dt);
 
-extern "C" void gpu_diffuse_field(float *field, float* fieldTemp, int ni, int nj, int nk, int iter, float coef);
+extern "C" void gpu_diffuse_field(float *field, float* fieldTemp0, float *filedTemp1, int ni, int nj, int nk, int iter, float coef);
 
 extern "C" void gpu_add_field(float *out, float *field1, float *field2, float coeff, int number);
 
@@ -539,11 +539,11 @@ public:
         gpu_add_buoyancy(field, density, temperature, ni, nj, nk, alpha, beta, dt);
     }
 
-    void diffuseField(float *field, float *fieldTmp, int ni, int nj, int nk, int iter, float coef)
+    void diffuseField(float *field, float *fieldTmp0, float *filedTemp1, int ni, int nj, int nk, int iter, float coef)
     {
-        gpu_diffuse_field(field, fieldTmp, ni, nj, nk, iter, coef);
+        gpu_diffuse_field(field, fieldTmp0, filedTemp1, ni, nj, nk, iter, coef);
 
-        copyDeviceToDevice(field, fieldTmp, ni * nj * nk * sizeof(float));
+        //copyDeviceToDevice(field, fieldTmp, ni * nj * nk * sizeof(float));
     }
 
     void addFields(float* out, float *field1, float *field2, float coeff, int number)

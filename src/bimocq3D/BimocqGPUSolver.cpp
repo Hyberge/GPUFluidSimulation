@@ -136,9 +136,9 @@ void BimocqGPUSolver::advanceBimocq(int framenum, float dt)
 
     if (Viscosity)
     {
-        diffuseField(VelocityU, VelocityUTemp, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, dt);
-        diffuseField(VelocityV, VelocityVTemp, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, dt);
-        diffuseField(VelocityW, VelocityWTemp, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, dt);
+        diffuseField(VelocityU, VelocityUTemp, TempSrcU, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, dt);
+        diffuseField(VelocityV, VelocityVTemp, TempSrcV, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, dt);
+        diffuseField(VelocityW, VelocityWTemp, TempSrcW, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, dt);
     }
     
     // calculate velocity change due to external forces(e.g. buoyancy)
@@ -202,6 +202,7 @@ void BimocqGPUSolver::advanceBimocq(int framenum, float dt)
 void BimocqGPUSolver::advanceReflection(int framenum, float dt)
 {
     float cfldt = getCFL();
+    cout << YELLOW << "[ CFL number is: " << MaxVelocity*dt/CellSize << " ] " << RESET << endl;
 
     {
         GpuSolver->semilagAdvectField(DensityTemp, Density, VelocityU, VelocityV, VelocityW, 0, 0, 0, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, -dt);
@@ -257,11 +258,11 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
 
     if (Viscosity)
     {
-        diffuseField(VelocityU, VelocityUTemp, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, 0.5f*dt);
-        diffuseField(VelocityV, VelocityVTemp, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, 0.5f*dt);
-        diffuseField(VelocityW, VelocityWTemp, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityU, VelocityUTemp, TempSrcU, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityV, VelocityVTemp, TempSrcV, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityW, VelocityWTemp, TempSrcW, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, 0.5f*dt);
     }
-    else
+    
     {
         GpuSolver->copyDeviceToDevice(VelocityUTemp, VelocityU, VelocityBufferSizeX);
         GpuSolver->copyDeviceToDevice(VelocityVTemp, VelocityV, VelocityBufferSizeY);
@@ -277,9 +278,6 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
     GpuSolver->semilagAdvectVelocity(VelocityUTemp, VelocityVTemp, VelocityWTemp, duProj, dvProj, dwProj, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, -0.5f*dt);
 
     GpuSolver->semilagAdvectVelocity(TempSrcU, TempSrcV, TempSrcW, VelocityUTemp, VelocityVTemp, VelocityWTemp, VelocityU, VelocityV, VelocityW, CellSize, CellNumberX, CellNumberY, CellNumberZ, cfldt, 0.5f*dt);
-
-    //GpuSolver->copyDeviceToHost(output_density, host_density, Density);
-    //GpuSolver->copyDeviceToHost(output_w, host_u, VelocityW);
 
     GpuSolver->add(VelocityUTemp, TempSrcU, -0.5f, (CellNumberX+1) * CellNumberY * CellNumberZ);
     GpuSolver->add(VelocityVTemp, TempSrcV, -0.5f, CellNumberX * (CellNumberY+1) * CellNumberZ);
@@ -300,9 +298,9 @@ void BimocqGPUSolver::advanceReflection(int framenum, float dt)
 
     if (Viscosity)
     {
-        diffuseField(VelocityU, VelocityUTemp, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, 0.5f*dt);
-        diffuseField(VelocityV, VelocityVTemp, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, 0.5f*dt);
-        diffuseField(VelocityW, VelocityWTemp, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityU, VelocityUTemp, TempSrcU, CellNumberX + 1, CellNumberY, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityV, VelocityVTemp, TempSrcV, CellNumberX, CellNumberY + 1, CellNumberZ, 20, Viscosity, 0.5f*dt);
+        diffuseField(VelocityW, VelocityWTemp, TempSrcW, CellNumberX, CellNumberY, CellNumberZ + 1, 20, Viscosity, 0.5f*dt);
     }
 
     projection();
@@ -320,27 +318,27 @@ void BimocqGPUSolver::semilagAdvect(float cfldt, float dt)
 float BimocqGPUSolver::getCFL()
 {
     MaxVelocity = 1e-4;
-    for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX+1;i++)
-    {
-        if (fabs(output_u(i,j,k))>MaxVelocity)
-        {
-            MaxVelocity = fabs(output_u(i,j,k));
-        }
-    }
-    for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY+1;j++) for (uint i=0; i<CellNumberX;i++)
-    {
-        if (fabs(output_v(i,j,k))>MaxVelocity)
-        {
-            MaxVelocity = fabs(output_v(i,j,k));
-        }
-    }
-    for (uint k=0; k<CellNumberZ+1;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX;i++)
-    {
-        if (fabs(output_w(i,j,k))>MaxVelocity)
-        {
-            MaxVelocity = fabs(output_w(i,j,k));
-        }
-    }
+    //for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX+1;i++)
+    //{
+    //    if (fabs(output_u(i,j,k))>MaxVelocity)
+    //    {
+    //        MaxVelocity = fabs(output_u(i,j,k));
+    //    }
+    //}
+    //for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY+1;j++) for (uint i=0; i<CellNumberX;i++)
+    //{
+    //    if (fabs(output_v(i,j,k))>MaxVelocity)
+    //    {
+    //        MaxVelocity = fabs(output_v(i,j,k));
+    //    }
+    //}
+    //for (uint k=0; k<CellNumberZ+1;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX;i++)
+    //{
+    //    if (fabs(output_w(i,j,k))>MaxVelocity)
+    //    {
+    //        MaxVelocity = fabs(output_w(i,j,k));
+    //    }
+    //}
     return CellSize / MaxVelocity;
 }
 
@@ -368,11 +366,11 @@ void BimocqGPUSolver::addBuoyancy(float dt)
     GpuSolver->add_buoyancy(VelocityV, Density, Temperature, CellNumberX, CellNumberY, CellNumberZ, _alpha, _beta, dt);
 }
 
-void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, int iter, float nu, float dt)
+void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp0, float *filedTemp1, int ni, int nj, int nk, int iter, float nu, float dt)
 {
     float coef = nu * (dt / (CellSize * CellSize));
 
-    GpuSolver->diffuseField(field, fieldTemp, ni, nj, nk, iter, coef);
+    GpuSolver->diffuseField(field, fieldTemp0, filedTemp1, ni, nj, nk, iter, coef);
 }
 
 void BimocqGPUSolver::projection()

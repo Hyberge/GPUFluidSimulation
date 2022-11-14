@@ -41,7 +41,7 @@ public:
 
     void addBuoyancy(float dt);
 
-    void diffuseField(float *field, float *fieldTemp, int ni, int nj, int nk, int iter, float nu, float dt);
+    void diffuseField(float *field, float *fieldTemp0, float *fieldTemp1, int ni, int nj, int nk, int iter, float nu, float dt);
 
     void projection();
 
