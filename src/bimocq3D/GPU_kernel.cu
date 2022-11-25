@@ -1059,3 +1059,13 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
     int numBlocks = (number + 255)/256;
     mad_kernel<<<numBlocks, blocksize>>>(field, field1, field2, coeff1, coeff2);
 }
+
+__global__ void conjugate_gradient_kernel(float *p, float *div, float *outP, int ni, int nj, int nk, float alpha, float beta)
+{
+    
+}
+
+extern "C" void gpu_conjugate_Gradient(float *p, float *div, float *residual, float *direction, int ni, int nj, int nk, int iter)
+{
+
+}

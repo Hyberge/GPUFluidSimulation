@@ -318,27 +318,27 @@ void BimocqGPUSolver::semilagAdvect(float cfldt, float dt)
 float BimocqGPUSolver::getCFL()
 {
     MaxVelocity = 1e-4;
-    //for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX+1;i++)
-    //{
-    //    if (fabs(output_u(i,j,k))>MaxVelocity)
-    //    {
-    //        MaxVelocity = fabs(output_u(i,j,k));
-    //    }
-    //}
-    //for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY+1;j++) for (uint i=0; i<CellNumberX;i++)
-    //{
-    //    if (fabs(output_v(i,j,k))>MaxVelocity)
-    //    {
-    //        MaxVelocity = fabs(output_v(i,j,k));
-    //    }
-    //}
-    //for (uint k=0; k<CellNumberZ+1;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX;i++)
-    //{
-    //    if (fabs(output_w(i,j,k))>MaxVelocity)
-    //    {
-    //        MaxVelocity = fabs(output_w(i,j,k));
-    //    }
-    //}
+    for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX+1;i++)
+    {
+        if (fabs(output_u(i,j,k))>MaxVelocity)
+        {
+            MaxVelocity = fabs(output_u(i,j,k));
+        }
+    }
+    for (uint k=0; k<CellNumberZ;k++) for (uint j=0; j<CellNumberY+1;j++) for (uint i=0; i<CellNumberX;i++)
+    {
+        if (fabs(output_v(i,j,k))>MaxVelocity)
+        {
+            MaxVelocity = fabs(output_v(i,j,k));
+        }
+    }
+    for (uint k=0; k<CellNumberZ+1;k++) for (uint j=0; j<CellNumberY;j++) for (uint i=0; i<CellNumberX;i++)
+    {
+        if (fabs(output_w(i,j,k))>MaxVelocity)
+        {
+            MaxVelocity = fabs(output_w(i,j,k));
+        }
+    }
     return CellSize / MaxVelocity;
 }
 
