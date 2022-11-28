@@ -1060,12 +1060,37 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
     mad_kernel<<<numBlocks, blocksize>>>(field, field1, field2, coeff1, coeff2);
 }
 
-__global__ void conjugate_gradient_kernel(float *p, float *div, float *outP, int ni, int nj, int nk, float alpha, float beta)
+__shared__ float r0[10][10][10];
+__global__ void calc_alpha_kernel(float *div, float *residual, float *alpha, int bi, int bj, int bk, int ni, int nj, int nk, float alpha, float beta)
 {
-    
+    //               residual(k).transpose() * residual(k)
+    //  alpha(k) = -----------------------------------------
+    //                 div(k).transpose() * A * div(k)
+
+    int i = threadIdx.x;
+    int j = threadIdx.y;
+    int k = threadIdx.z;
+    int block_i = blockIdx.x;
+    int block_j = blockIdx.y;
+    int block_k = blockIdx.z;
+    if (i>=0 && i<ni&& j>=0 && j<nj && k>=0 && k<nk)
+    {
+        
+    }
 }
 
-extern "C" void gpu_conjugate_Gradient(float *p, float *div, float *residual, float *direction, int ni, int nj, int nk, int iter)
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *direction, float *alpha, float *beta, int ni, int nj, int nk, int iter)
 {
+    int blocksize = 256;
+    int number = ni * nj * nk;
+    int numBlocks = (number + 255)/256;
+    divergence_kernel<<<numBlocks, blocksize>>>(u, v, w, div, ni, nj, nk, halfrdx);
 
+    // we start with x = [0], so r0 == b
+    cudaMemcpy(residual, div, number * sizeof(float), cudaMemcpyDeviceToDevice);
+    // first iterater, p == r0
+    cudaMemcpy(direction, div, number * sizeof(float), cudaMemcpyDeviceToDevice)
+
+    dim3 threadsPerBlock(8,8,8);
+    dim3 numBlocks3D((ni+7)/8, (nj+7)/8, (nk+7)/8);
 }
