@@ -1060,26 +1060,131 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
     mad_kernel<<<numBlocks, blocksize>>>(field, field1, field2, coeff1, coeff2);
 }
 
-__shared__ float r0[10][10][10];
-__global__ void calc_alpha_kernel(float *div, float *residual, float *alpha, int bi, int bj, int bk, int ni, int nj, int nk, float alpha, float beta)
+/*
+                          [0   1  0]
+  return A * x, where A = [1  -4  1]
+                          [0   1  0]
+*/
+__device__ void calc_poisson_value(float *x, int i, int j, int k, int ni, int nj, int nk)
 {
-    //               residual(k).transpose() * residual(k)
-    //  alpha(k) = -----------------------------------------
-    //                 div(k).transpose() * A * div(k)
+    float x_center = x[k*ni*nj + j*ni + i];
+    float x_left = x[k*(ni+1)*nj + j*(ni+1) + i];
+    float x_right = x[k*(ni+1)*nj + j*(ni+1) + i + 1];
+    float x_front = x[k*ni*(nj+1) + (j)*ni + i];
+    float x_back = x[k*ni*(nj+1) + (j + 1)*ni + i];
+    float x_down = x[(k)*ni*nj + j*ni + i];
+    float x_up = x[(k + 1)*ni*nj + j*ni + i];
 
-    int i = threadIdx.x;
-    int j = threadIdx.y;
-    int k = threadIdx.z;
-    int block_i = blockIdx.x;
-    int block_j = blockIdx.y;
-    int block_k = blockIdx.z;
-    if (i>=0 && i<ni&& j>=0 && j<nj && k>=0 && k<nk)
+    return x_left + x_right + x_front + x_back + x_down + x_up - 6 * x_center;
+}
+
+__global__ void calc_poisson_kernel(float *x, float *b, int ni, int nj, int nk)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        
+        b[index] = calc_poisson_value(x, i, j, k, ni, nj, nk);
     }
 }
 
-extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *direction, float *alpha, float *beta, int ni, int nj, int nk, int iter)
+__global__ void calc_residual_kernel(float *x, float *b, float *r, int ni, int nj, int nk)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    {
+        float b_temp = calc_poisson_value(x, i, j, k, ni, nj, nk);
+
+        r[index] = b[index] - b_temp;
+    }
+}
+
+__shared__ float dotResult[256];
+__global__ void dot_vector_kernel(float *v0, float *v1, float *output, int count)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    if (index < count)
+    {
+        dotResult[threadIdx.x] = v0[index] * v1[index];
+    }
+    else
+    {
+        dotResult[threadIdx.x] = 0;
+    }
+
+    __syncthreads();
+
+    if (threadIdx.x < 16)
+    {
+        float sum0 = dotResult[threadIdx.x * 16 + 0]  + dotResult[threadIdx.x * 16 + 1]  + dotResult[threadIdx.x * 16 + 2]  + dotResult[threadIdx.x * 16 + 3] +
+                     dotResult[threadIdx.x * 16 + 4]  + dotResult[threadIdx.x * 16 + 5]  + dotResult[threadIdx.x * 16 + 6]  + dotResult[threadIdx.x * 16 + 7] +
+                     dotResult[threadIdx.x * 16 + 8]  + dotResult[threadIdx.x * 16 + 9]  + dotResult[threadIdx.x * 16 + 10] + dotResult[threadIdx.x * 16 + 11] +
+                     dotResult[threadIdx.x * 16 + 12] + dotResult[threadIdx.x * 16 + 13] + dotResult[threadIdx.x * 16 + 14] + dotResult[threadIdx.x * 16 + 15];
+        
+        dotResult[threadIdx.x] = sum0;
+    }
+
+    if (threadIdx.x == 0)
+    {
+        float sum  = dotResult[0]  + dotResult[1]  + dotResult[2]  + dotResult[3] +
+                     dotResult[4]  + dotResult[5]  + dotResult[6]  + dotResult[7] +
+                     dotResult[8]  + dotResult[9]  + dotResult[10] + dotResult[11] +
+                     dotResult[12] + dotResult[13] + dotResult[14] + dotResult[15];
+
+        output[blockIdx.x] = sum;
+    }
+}
+
+__shared__ float sumResult[256];
+__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, int outIndex)
+{
+    sumResult[threadIdx.x] = 0;
+
+    int indexStart = threadIdx.x * countPerThread;
+    for (int i = 0; i < countPerThread; ++i)
+    {
+        if (indexStart + i < count)
+            sumResult[threadIdx.x] += v[indexStart + i];
+    }
+
+    __syncthreads();
+
+    if (threadIdx.x < 16)
+    {
+        float sum0 = sumResult[threadIdx.x * 16 + 0]  + sumResult[threadIdx.x * 16 + 1]  + sumResult[threadIdx.x * 16 + 2]  + sumResult[threadIdx.x * 16 + 3] +
+                     sumResult[threadIdx.x * 16 + 4]  + sumResult[threadIdx.x * 16 + 5]  + sumResult[threadIdx.x * 16 + 6]  + sumResult[threadIdx.x * 16 + 7] +
+                     sumResult[threadIdx.x * 16 + 8]  + sumResult[threadIdx.x * 16 + 9]  + sumResult[threadIdx.x * 16 + 10] + sumResult[threadIdx.x * 16 + 11] +
+                     sumResult[threadIdx.x * 16 + 12] + sumResult[threadIdx.x * 16 + 13] + sumResult[threadIdx.x * 16 + 14] + sumResult[threadIdx.x * 16 + 15];
+        
+        sumResult[threadIdx.x] = sum0;
+    }
+
+    if (threadIdx.x == 0)
+    {
+        float sum  = sumResult[0]  + sumResult[1]  + sumResult[2]  + sumResult[3] +
+                     sumResult[4]  + sumResult[5]  + sumResult[6]  + sumResult[7] +
+                     sumResult[8]  + sumResult[9]  + sumResult[10] + sumResult[11] +
+                     sumResult[12] + sumResult[13] + sumResult[14] + sumResult[15];
+
+        output[outIndex] = sum;
+    }
+}
+
+__global__ void update_x_kernel(float *x, float *dir, float *alpha, int count)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    if (index < count)
+    {
+        x[index] += alpha[0] * dir[index];
+    }
+}
+
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *alpha, float *beta, int ni, int nj, int nk, int iter)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1088,9 +1193,18 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 
     // we start with x = [0], so r0 == b
     cudaMemcpy(residual, div, number * sizeof(float), cudaMemcpyDeviceToDevice);
-    // first iterater, p == r0
-    cudaMemcpy(direction, div, number * sizeof(float), cudaMemcpyDeviceToDevice)
+    // first iterater, dir0 == r0
+    cudaMemcpy(direction, dir, number * sizeof(float), cudaMemcpyDeviceToDevice);
 
-    dim3 threadsPerBlock(8,8,8);
-    dim3 numBlocks3D((ni+7)/8, (nj+7)/8, (nk+7)/8);
+    float *dotResidual = cudaMalloc(numBlocks);
+    float *dotDir = cudaMalloc(numBlocks);
+    for (size_t i = 0; i < iter; ++i)
+    {
+        calc_poisson_kernel<<<numBlocks, blocksize>>>(p, div, ni, nj, nk);
+
+        dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
+
+        int coutPerThread = (numBlocks + 255)/256;
+        calc_sum_kernel<<<1, blocksize>>>(dotResidual, alpha, numBlocks, coutPerThread);
+    }
 }
