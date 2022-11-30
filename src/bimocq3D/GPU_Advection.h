@@ -90,6 +90,8 @@ extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, floa
 
 extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1, float coeff2, int number);
 
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, int ni, int nj, int nk, int iter, float halfrdx);
+
 class gpuMapper{
 public:
     gpuMapper(){}
@@ -298,7 +300,7 @@ public:
     void allocGPUBuffer(void ** buffer, size_t size)
     {
         cudaMalloc(buffer, size);
-        cudaMemset(buffer, 0, size);
+        cudaMemset(*buffer, 0, size);
     }
 
     void solveForward(float cfl_dt, float dt)
@@ -586,6 +588,13 @@ public:
     void clampExtrema(float *field, float *fieldTemp, float *u, float *v, float *w, float h, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float dt)
     {
         gpu_clamp_extrema(field, fieldTemp, u, v, w, ni, nj, nk, dimx, dimy, dimz, ox, oy, oz, h, dt);
+    }
+
+    void projectionConjugateGradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, int ni, int nj, int nk, int iter, float halfrdx)
+    {
+        cudaMemset(div, 0, sizeof(float)*ni*nj*nk);
+        cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
+        gpu_conjugate_gradient(u, v, w, div, p, residual, dir, ni, nj, nk, iter, halfrdx);
     }
 };
 

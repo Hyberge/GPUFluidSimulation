@@ -1065,7 +1065,7 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
   return A * x, where A = [1  -4  1]
                           [0   1  0]
 */
-__device__ void calc_poisson_value(float *x, int i, int j, int k, int ni, int nj, int nk)
+__device__ float calc_poisson_value(float *x, int i, int j, int k, int ni, int nj, int nk)
 {
     float x_center = x[k*ni*nj + j*ni + i];
     float x_left = x[k*(ni+1)*nj + j*(ni+1) + i];
@@ -1087,20 +1087,6 @@ __global__ void calc_poisson_kernel(float *x, float *b, int ni, int nj, int nk)
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
         b[index] = calc_poisson_value(x, i, j, k, ni, nj, nk);
-    }
-}
-
-__global__ void calc_residual_kernel(float *x, float *b, float *r, int ni, int nj, int nk)
-{
-    int index = blockDim.x*blockIdx.x + threadIdx.x;
-    int i = index%ni;
-    int j = (index%(ni*nj))/ni;
-    int k = index/(ni*nj);
-    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
-    {
-        float b_temp = calc_poisson_value(x, i, j, k, ni, nj, nk);
-
-        r[index] = b[index] - b_temp;
     }
 }
 
@@ -1141,7 +1127,7 @@ __global__ void dot_vector_kernel(float *v0, float *v1, float *output, int count
 }
 
 __shared__ float sumResult[256];
-__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, int outIndex)
+__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, bool isApha)
 {
     sumResult[threadIdx.x] = 0;
 
@@ -1170,8 +1156,34 @@ __global__ void calc_sum_kernel(float *v, float *output, int count, int countPer
                      sumResult[4]  + sumResult[5]  + sumResult[6]  + sumResult[7] +
                      sumResult[8]  + sumResult[9]  + sumResult[10] + sumResult[11] +
                      sumResult[12] + sumResult[13] + sumResult[14] + sumResult[15];
+        
+        float dotR = output[0];         // // r(k).transpose() * r(k)
+        if (isApha)
+        {
+            float dotP = sum;
 
-        output[outIndex] = sum;
+            output[1] = sum;            // dir.transpose() * A * dir
+            output[2] = dotR / dotP;    // alpha
+        }
+        else
+        {
+            output[0] = sum;            // r(k+1).transpose() * r(k+1)
+            output[3] = sum / dotR;     // beta
+        }
+    }
+}
+
+__global__ void update_residual_kernel(float *x, float *b, float *alpha, float *r, int ni, int nj, int nk)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    {
+        float b_temp = calc_poisson_value(x, i, j, k, ni, nj, nk);
+
+        r[index] = b[index] - alpha[2] * b_temp;
     }
 }
 
@@ -1180,11 +1192,20 @@ __global__ void update_x_kernel(float *x, float *dir, float *alpha, int count)
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < count)
     {
-        x[index] += alpha[0] * dir[index];
+        x[index] += dir[index] * alpha[2];
     }
 }
 
-extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *alpha, float *beta, int ni, int nj, int nk, int iter)
+__global__ void update_dir_kernel(float *dir, float *residual, float *beta, int count)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    if (index < count)
+    {
+        dir[index] = residual[index] + dir[index] * beta[3];
+    }
+}
+
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, int ni, int nj, int nk, int iter, float halfrdx)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1192,19 +1213,54 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     divergence_kernel<<<numBlocks, blocksize>>>(u, v, w, div, ni, nj, nk, halfrdx);
 
     // we start with x = [0], so r0 == b
-    cudaMemcpy(residual, div, number * sizeof(float), cudaMemcpyDeviceToDevice);
+    size_t bufferSize = number * sizeof(float);
+    cudaMemset(p, 0, bufferSize);
+    cudaMemcpy(residual, div, bufferSize, cudaMemcpyDeviceToDevice);
     // first iterater, dir0 == r0
-    cudaMemcpy(direction, dir, number * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(dir, residual, bufferSize, cudaMemcpyDeviceToDevice);
 
-    float *dotResidual = cudaMalloc(numBlocks);
-    float *dotDir = cudaMalloc(numBlocks);
+    int coutPerThread = (numBlocks + 255)/256;
+    float *dotResidual;
+    cudaMalloc(&dotResidual, bufferSize);
+    float *dotDir;
+    cudaMalloc(&dotDir, bufferSize);
+    float *dotTemp;
+    cudaMalloc(&dotTemp, 4 * sizeof(float));
+
+    // r.transpose() * r
+    dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
+    calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
+
+    // dir.transpose() * A * dir
+    calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk);
+    dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
+    calc_sum_kernel<<<1, blocksize>>>(dotDir, dotTemp, numBlocks, coutPerThread, true);
+
     for (size_t i = 0; i < iter; ++i)
     {
-        calc_poisson_kernel<<<numBlocks, blocksize>>>(p, div, ni, nj, nk);
+        update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotTemp, number);
+
+        update_residual_kernel<<<numBlocks, blocksize>>>(p, div, dotTemp, residual, ni, nj, nk);
 
         dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
+        calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
 
-        int coutPerThread = (numBlocks + 255)/256;
-        calc_sum_kernel<<<1, blocksize>>>(dotResidual, alpha, numBlocks, coutPerThread);
+        update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotTemp, number);
+
+        calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk);
+        dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
+        calc_sum_kernel<<<1, blocksize>>>(dotDir, dotTemp, numBlocks, coutPerThread, true);
     }
+
+    number = (ni + 1) * nj * nk;
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(u, p, ni + 1, nj, nk, 1, 0, 0, halfrdx);
+
+    number = ni * (nj + 1) * nk;
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(v, p, ni, nj + 1, nk, 0, 1, 0, halfrdx);
+
+    number = ni * nj * (nk + 1);
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(w, p, ni, nj, nk + 1, 0, 0, 1, halfrdx);
 }

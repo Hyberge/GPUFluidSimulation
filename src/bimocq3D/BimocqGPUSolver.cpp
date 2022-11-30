@@ -375,9 +375,10 @@ void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp0, float *filed
 
 void BimocqGPUSolver::projection()
 {
-#if 1   // jacobi iteration
+#if 0   // jacobi iteration
     GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, CellNumberX, CellNumberY, CellNumberZ, 50, 0.5, -1, 1.0 / 6.0);
 #else   // AMG solver
+    GpuSolver->projectionConjugateGradient(VelocityU, VelocityV, VelocityW, div, p, p_temp, TemperatureTemp, CellNumberX, CellNumberY, CellNumberZ, 20, 0.5);
 #endif
 }
 
