@@ -1173,7 +1173,7 @@ __global__ void calc_sum_kernel(float *v, float *output, int count, int countPer
     }
 }
 
-__global__ void update_residual_kernel(float *x, float *b, float *alpha, float *r, int ni, int nj, int nk)
+__global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1181,9 +1181,7 @@ __global__ void update_residual_kernel(float *x, float *b, float *alpha, float *
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        float b_temp = calc_poisson_value(x, i, j, k, ni, nj, nk);
-
-        r[index] = b[index] - alpha[2] * b_temp;
+        r[index] = b[index] - calc_poisson_value(x, i, j, k, ni, nj, nk);
     }
 }
 
@@ -1231,25 +1229,36 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
     calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
 
-    // dir.transpose() * A * dir
-    calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk);
-    dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
-    calc_sum_kernel<<<1, blocksize>>>(dotDir, dotTemp, numBlocks, coutPerThread, true);
-
     for (size_t i = 0; i < iter; ++i)
     {
-        update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotTemp, number);
+        // step-1: calculate alpha(i+1)
+        {
+            // dir.transpose() * A * dir
+            calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk);
+            dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
+            calc_sum_kernel<<<1, blocksize>>>(dotDir, dotTemp, numBlocks, coutPerThread, true);
+        }
 
-        update_residual_kernel<<<numBlocks, blocksize>>>(p, div, dotTemp, residual, ni, nj, nk);
+        // step-2: calculate x(i+1)
+        {
+            update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotTemp, number);
+        }
 
-        dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
-        calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
+        // step-3: calculate r(i+1)
+        {
+            update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
+        }
 
-        update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotTemp, number);
+        // step-4: calculate beta(i+1)
+        {
+            dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
+            calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
+        }
 
-        calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk);
-        dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
-        calc_sum_kernel<<<1, blocksize>>>(dotDir, dotTemp, numBlocks, coutPerThread, true);
+        // step-5: caclulate dir(i+1)
+        {
+            update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotTemp, number);
+        }
     }
 
     number = (ni + 1) * nj * nk;
