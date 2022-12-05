@@ -896,7 +896,7 @@ __global__ void divergence_kernel(float *u, float *v, float *w, float *div, int 
     int i = index%ni;
     int j = (index%(ni*nj))/ni;
     int k = index/(ni*nj);
-    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    if (i>=0 && i<ni&& j>=0 && j<nj && k>=0 && k<nk)
     {
         float u_left = u[k*(ni+1)*nj + j*(ni+1) + i];
         float u_right = u[k*(ni+1)*nj + j*(ni+1) + i + 1];
@@ -1068,14 +1068,14 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
 __device__ float calc_poisson_value(float *x, int i, int j, int k, int ni, int nj, int nk)
 {
     float x_center = x[k*ni*nj + j*ni + i];
-    float x_left = x[k*(ni+1)*nj + j*(ni+1) + i];
-    float x_right = x[k*(ni+1)*nj + j*(ni+1) + i + 1];
-    float x_front = x[k*ni*(nj+1) + (j)*ni + i];
-    float x_back = x[k*ni*(nj+1) + (j + 1)*ni + i];
-    float x_down = x[(k)*ni*nj + j*ni + i];
+    float x_left = x[k*ni*nj + j*ni + i - 1];
+    float x_right = x[k*ni*nj + j*ni + i + 1];
+    float x_front = x[k*ni*nj + (j - 1)*ni + i];
+    float x_back = x[k*ni*nj + (j + 1)*ni + i];
+    float x_down = x[(k - 1)*ni*nj + j*ni + i];
     float x_up = x[(k + 1)*ni*nj + j*ni + i];
 
-    return x_left + x_right + x_front + x_back + x_down + x_up - 6 * x_center;
+    return (x_left + x_right + x_front + x_back + x_down + x_up) - x_center*6;
 }
 
 __global__ void calc_poisson_kernel(float *x, float *b, int ni, int nj, int nk)
@@ -1090,7 +1090,7 @@ __global__ void calc_poisson_kernel(float *x, float *b, int ni, int nj, int nk)
     }
 }
 
-__shared__ float dotResult[256];
+__shared__ float dotResult[272];
 __global__ void dot_vector_kernel(float *v0, float *v1, float *output, int count)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
@@ -1112,22 +1112,22 @@ __global__ void dot_vector_kernel(float *v0, float *v1, float *output, int count
                      dotResult[threadIdx.x * 16 + 8]  + dotResult[threadIdx.x * 16 + 9]  + dotResult[threadIdx.x * 16 + 10] + dotResult[threadIdx.x * 16 + 11] +
                      dotResult[threadIdx.x * 16 + 12] + dotResult[threadIdx.x * 16 + 13] + dotResult[threadIdx.x * 16 + 14] + dotResult[threadIdx.x * 16 + 15];
         
-        dotResult[threadIdx.x] = sum0;
+        dotResult[threadIdx.x+256] = sum0;
     }
 
     if (threadIdx.x == 0)
     {
-        float sum  = dotResult[0]  + dotResult[1]  + dotResult[2]  + dotResult[3] +
-                     dotResult[4]  + dotResult[5]  + dotResult[6]  + dotResult[7] +
-                     dotResult[8]  + dotResult[9]  + dotResult[10] + dotResult[11] +
-                     dotResult[12] + dotResult[13] + dotResult[14] + dotResult[15];
+        float sum  = dotResult[256+0]  + dotResult[256+1]  + dotResult[256+2]  + dotResult[+3] +
+                     dotResult[256+4]  + dotResult[256+5]  + dotResult[256+6]  + dotResult[+7] +
+                     dotResult[256+8]  + dotResult[256+9]  + dotResult[256+10] + dotResult[+11] +
+                     dotResult[256+12] + dotResult[256+13] + dotResult[256+14] + dotResult[+15];
 
         output[blockIdx.x] = sum;
     }
 }
 
-__shared__ float sumResult[256];
-__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, bool isApha)
+__shared__ float sumResult[272];
+__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, int iterIndex)
 {
     sumResult[threadIdx.x] = 0;
 
@@ -1147,29 +1147,33 @@ __global__ void calc_sum_kernel(float *v, float *output, int count, int countPer
                      sumResult[threadIdx.x * 16 + 8]  + sumResult[threadIdx.x * 16 + 9]  + sumResult[threadIdx.x * 16 + 10] + sumResult[threadIdx.x * 16 + 11] +
                      sumResult[threadIdx.x * 16 + 12] + sumResult[threadIdx.x * 16 + 13] + sumResult[threadIdx.x * 16 + 14] + sumResult[threadIdx.x * 16 + 15];
         
-        sumResult[threadIdx.x] = sum0;
+        sumResult[threadIdx.x+256] = sum0;
     }
 
     if (threadIdx.x == 0)
     {
-        float sum  = sumResult[0]  + sumResult[1]  + sumResult[2]  + sumResult[3] +
-                     sumResult[4]  + sumResult[5]  + sumResult[6]  + sumResult[7] +
-                     sumResult[8]  + sumResult[9]  + sumResult[10] + sumResult[11] +
-                     sumResult[12] + sumResult[13] + sumResult[14] + sumResult[15];
-        
-        float dotR = output[0];         // // r(k).transpose() * r(k)
-        if (isApha)
-        {
-            float dotP = sum;
+        float sum  = sumResult[256+0]  + sumResult[256+1]  + sumResult[256+2]  + sumResult[256+3] +
+                     sumResult[256+4]  + sumResult[256+5]  + sumResult[256+6]  + sumResult[256+7] +
+                     sumResult[256+8]  + sumResult[256+9]  + sumResult[256+10] + sumResult[256+11] +
+                     sumResult[256+12] + sumResult[256+13] + sumResult[256+14] + sumResult[256+15];
 
-            output[1] = sum;            // dir.transpose() * A * dir
-            output[2] = dotR / dotP;    // alpha
-        }
-        else
-        {
-            output[0] = sum;            // r(k+1).transpose() * r(k+1)
-            output[3] = sum / dotR;     // beta
-        }
+        output[iterIndex] = sum;
+        
+        //float dotR = output[0];         // // r(k).transpose() * r(k)
+        //if (isApha)
+        //{
+        //    float dotP = sum;
+        //
+        //    output[1] = sum;            // dir.transpose() * A * dir
+        //    output[2] = dotR / dotP;    // alpha
+        //}
+        //else
+        //{
+        //    output[0] = sum;            // r(k+1).transpose() * r(k+1)
+        //    output[3] = sum / dotR;     // beta
+        //
+        //    output[debugIndex + 4] = sum;
+        //}
     }
 }
 
@@ -1185,25 +1189,25 @@ __global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int
     }
 }
 
-__global__ void update_x_kernel(float *x, float *dir, float *alpha, int count)
+__global__ void update_x_kernel(float *x, float *dir, float *alpha, int count, int rIndex, int dIndex)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < count)
     {
-        x[index] += dir[index] * alpha[2];
+        x[index] += dir[index] * alpha[rIndex] / alpha[dIndex];
     }
 }
 
-__global__ void update_dir_kernel(float *dir, float *residual, float *beta, int count)
+__global__ void update_dir_kernel(float *dir, float *residual, float *beta, int count, int rIndex, int rPlusIndex)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < count)
     {
-        dir[index] = residual[index] + dir[index] * beta[3];
+        dir[index] = residual[index] + dir[index] * beta[rPlusIndex] / beta[rIndex];
     }
 }
 
-extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, int ni, int nj, int nk, int iter, float halfrdx)
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1212,7 +1216,6 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 
     // we start with x = [0], so r0 == b
     size_t bufferSize = number * sizeof(float);
-    cudaMemset(p, 0, bufferSize);
     cudaMemcpy(residual, div, bufferSize, cudaMemcpyDeviceToDevice);
     // first iterater, dir0 == r0
     cudaMemcpy(dir, residual, bufferSize, cudaMemcpyDeviceToDevice);
@@ -1222,26 +1225,26 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     cudaMalloc(&dotResidual, bufferSize);
     float *dotDir;
     cudaMalloc(&dotDir, bufferSize);
-    float *dotTemp;
-    cudaMalloc(&dotTemp, 4 * sizeof(float));
+    //float *dotTemp;
+    //cudaMalloc(&dotTemp, 4 * sizeof(float));
 
     // r.transpose() * r
     dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
-    calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
+    calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotR, numBlocks, coutPerThread, 0);
 
     for (size_t i = 0; i < iter; ++i)
     {
         // step-1: calculate alpha(i+1)
         {
             // dir.transpose() * A * dir
-            calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk);
+            calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk); 
             dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
-            calc_sum_kernel<<<1, blocksize>>>(dotDir, dotTemp, numBlocks, coutPerThread, true);
+            calc_sum_kernel<<<1, blocksize>>>(dotDir, dotR, numBlocks, coutPerThread, i*2+1);
         }
 
         // step-2: calculate x(i+1)
         {
-            update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotTemp, number);
+            update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotR, number, i*2, i*2+1);
         }
 
         // step-3: calculate r(i+1)
@@ -1252,12 +1255,12 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
         // step-4: calculate beta(i+1)
         {
             dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
-            calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotTemp, numBlocks, coutPerThread, false);
+            calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotR, numBlocks, coutPerThread, (i+1)*2);
         }
 
         // step-5: caclulate dir(i+1)
         {
-            update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotTemp, number);
+            update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotR, number, i*2, (i+1)*2);
         }
     }
 
