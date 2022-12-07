@@ -84,7 +84,7 @@ extern "C" void gpu_diffuse_field(float *field, float* fieldTemp0, float *filedT
 
 extern "C" void gpu_add_field(float *out, float *field1, float *field2, float coeff, int number);
 
-extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta);
+extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, float *debugParam, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta);
 
 extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, float *v, float *w, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float h, float dt);
 
@@ -577,12 +577,12 @@ public:
         gpu_accumulate_field(fieldChange, dfieldInit, forwardX, forwardY, forwardZ, h, ni, nj, nk, is_point, coeff);
     }
 
-    void projectionJacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
+    void projectionJacobi(float *u, float *v, float *w , float *div, float *p, float *p_temp, float *debugParam, int ni, int nj, int nk, int iter, float halfrdx, float alpha, float beta)
     {
         cudaMemset(div, 0, sizeof(float)*ni*nj*nk);
         cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
         cudaMemset(p_temp, 0, sizeof(float)*ni*nj*nk);
-        gpu_projection_jacobi(u, v, w, div, p, p_temp, ni, nj, nk, iter, halfrdx, alpha, beta);
+        gpu_projection_jacobi(u, v, w, div, p, p_temp, debugParam, ni, nj, nk, iter, halfrdx, alpha, beta);
     }
 
     void clampExtrema(float *field, float *fieldTemp, float *u, float *v, float *w, float h, int ni, int nj, int nk, int dimx, int dimy, int dimz, float ox, float oy, float oz, float dt)
