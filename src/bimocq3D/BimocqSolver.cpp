@@ -580,7 +580,7 @@ void BimocqSolver::diffuse_field(double dt, double nu, buffer3Df &field)
 
 void BimocqSolver::clampExtrema(float dt, buffer3Df &f_n, buffer3Df &f_np1)
 {
-#if 0
+#if GPU_Test
     gpuSolver->copyHostToDevice(_un, gpuSolver->u_host, gpuSolver->u, (_nx+1)*_ny*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_vn, gpuSolver->v_host, gpuSolver->v, _nx*(_ny+1)*_nz*sizeof(float));
     gpuSolver->copyHostToDevice(_wn, gpuSolver->w_host, gpuSolver->w, _nx*_ny*(_nz+1)*sizeof(float));

@@ -377,8 +377,31 @@ void BimocqGPUSolver::projection()
 {
 #if 0   // jacobi iteration
     GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, CellNumberX, CellNumberY, CellNumberZ, 50, 0.5, -1, 1.0 / 6.0);
-#else   // AMG solver
-    GpuSolver->projectionConjugateGradient(VelocityU, VelocityV, VelocityW, div, p, p_temp, TemperatureTemp, CellNumberX, CellNumberY, CellNumberZ, 20, 0.5);
+#elif 1  // Conjugate Gradient solver
+    int iter = 20;
+    GpuSolver->projectionConjugateGradient(VelocityU, VelocityV, VelocityW, div, p, p_temp, TemperatureTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5);
+
+    GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
+    cout << "Residual: " << endl;
+    for(int i = 0; i < iter; ++i)
+    {
+        cout << output_u.at(i*2, 0, 0) << "   ";
+    }
+    cout << endl;
+    cout << "Alpha: " << endl;
+    for(int i = 0; i < iter; ++i)
+    {
+        cout << output_u.at(i*2, 0, 0) / output_u.at(i*2 + 1, 0, 0) << "   ";
+    }
+    cout << endl;
+    cout << "Beta: " << endl;
+    for(int i = 0; i < iter; ++i)
+    {
+        cout << output_u.at(i*2, 0, 0) / output_u.at((i+1)*2, 0, 0) << "   ";
+    }
+    cout << endl << endl;
+#else
+    // MG-CG solver
 #endif
 }
 

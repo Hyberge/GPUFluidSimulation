@@ -1185,7 +1185,7 @@ __global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        r[index] = b[index] - calc_poisson_value(x, i, j, k, ni, nj, nk);
+        r[index] = -b[index] + calc_poisson_value(x, i, j, k, ni, nj, nk);
     }
 }
 
@@ -1203,7 +1203,7 @@ __global__ void update_dir_kernel(float *dir, float *residual, float *beta, int 
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < count)
     {
-        dir[index] = residual[index] + dir[index] * beta[rPlusIndex] / beta[rIndex];
+        dir[index] = -residual[index] + dir[index] * beta[rPlusIndex] / beta[rIndex];
     }
 }
 
@@ -1216,9 +1216,11 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 
     // we start with x = [0], so r0 == b
     size_t bufferSize = number * sizeof(float);
-    cudaMemcpy(residual, div, bufferSize, cudaMemcpyDeviceToDevice);
+    //cudaMemcpy(residual, div, bufferSize, cudaMemcpyDeviceToDevice);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
     // first iterater, dir0 == r0
-    cudaMemcpy(dir, residual, bufferSize, cudaMemcpyDeviceToDevice);
+    cudaMemset(dir, 0, bufferSize);
+    add_kernel<<<numBlocks, blocksize>>>(dir, residual, -1);
 
     int coutPerThread = (numBlocks + 255)/256;
     float *dotResidual;
@@ -1275,4 +1277,7 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     number = ni * nj * (nk + 1);
     numBlocks = (number + 255)/256;
     gradient_kernel<<<numBlocks, blocksize>>>(w, p, ni, nj, nk + 1, 0, 0, 1, halfrdx);
+
+    cudaFree(dotResidual);
+    cudaFree(dotDir);
 }

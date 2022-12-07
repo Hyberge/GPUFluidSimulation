@@ -90,7 +90,7 @@ extern "C" void gpu_clamp_extrema(float *field, float *fieldTemp, float *u, floa
 
 extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1, float coeff2, int number);
 
-extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, int ni, int nj, int nk, int iter, float halfrdx);
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx);
 
 class gpuMapper{
 public:
@@ -287,14 +287,14 @@ public:
     {
          cudaError_t ret = cudaMemcpy(device_field, host_field, size, cudaMemcpyHostToDevice);
          if (ret != cudaSuccess)
-            cout << "cuda Error: " << ret << endl;
+            cout << "cuda Error: " << ret << endl << "  " << cudaGetErrorString(ret) << endl;
     }
 
     void copyDeviceToDevice(float *dst, float *src, size_t size)
     {
          cudaError_t ret = cudaMemcpy(dst, src, size, cudaMemcpyDeviceToDevice);
          if (ret != cudaSuccess)
-            cout << "cuda Error: " << ret << endl;
+            cout << "cuda Error: " << ret << endl << "  " << cudaGetErrorString(ret) << endl;
     }
 
     void allocGPUBuffer(void ** buffer, size_t size)
@@ -590,11 +590,11 @@ public:
         gpu_clamp_extrema(field, fieldTemp, u, v, w, ni, nj, nk, dimx, dimy, dimz, ox, oy, oz, h, dt);
     }
 
-    void projectionConjugateGradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, int ni, int nj, int nk, int iter, float halfrdx)
+    void projectionConjugateGradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx)
     {
         cudaMemset(div, 0, sizeof(float)*ni*nj*nk);
         cudaMemset(p, 0, sizeof(float)*ni*nj*nk);
-        gpu_conjugate_gradient(u, v, w, div, p, residual, dir, ni, nj, nk, iter, halfrdx);
+        gpu_conjugate_gradient(u, v, w, div, p, residual, dir, dotR, ni, nj, nk, iter, halfrdx);
     }
 };
 
