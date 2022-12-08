@@ -1101,22 +1101,6 @@ __global__ void calc_sum_kernel(float *v, float *output, int count, int countPer
                      sumResult[256+12] + sumResult[256+13] + sumResult[256+14] + sumResult[256+15];
 
         output[iterIndex] = sum;
-        
-        //float dotR = output[0];         // // r(k).transpose() * r(k)
-        //if (isApha)
-        //{
-        //    float dotP = sum;
-        //
-        //    output[1] = sum;            // dir.transpose() * A * dir
-        //    output[2] = dotR / dotP;    // alpha
-        //}
-        //else
-        //{
-        //    output[0] = sum;            // r(k+1).transpose() * r(k+1)
-        //    output[3] = sum / dotR;     // beta
-        //
-        //    output[debugIndex + 4] = sum;
-        //}
     }
 }
 
@@ -1150,7 +1134,7 @@ __global__ void update_dir_kernel(float *dir, float *residual, float *beta, int 
     }
 }
 
-extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx)
+extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotResult, int ni, int nj, int nk, int iter, float halfrdx)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1175,7 +1159,7 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 
     // r.transpose() * r
     dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
-    calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotR, numBlocks, coutPerThread, 0);
+    calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotResult, numBlocks, coutPerThread, 0);
 
     for (size_t i = 0; i < iter; ++i)
     {
@@ -1184,12 +1168,12 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
             // dir.transpose() * A * dir
             calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, ni, nj, nk); 
             dot_vector_kernel<<<numBlocks, blocksize>>>(dir, dotResidual, dotDir, number);
-            calc_sum_kernel<<<1, blocksize>>>(dotDir, dotR, numBlocks, coutPerThread, i*2+1);
+            calc_sum_kernel<<<1, blocksize>>>(dotDir, dotResult, numBlocks, coutPerThread, i*2+1);
         }
 
         // step-2: calculate x(i+1)
         {
-            update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotR, number, i*2, i*2+1);
+            update_x_kernel<<<numBlocks, blocksize>>>(p, dir, dotResult, number, i*2, i*2+1);
         }
 
         // step-3: calculate r(i+1)
@@ -1200,12 +1184,12 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
         // step-4: calculate beta(i+1)
         {
             dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
-            calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotR, numBlocks, coutPerThread, (i+1)*2);
+            calc_sum_kernel<<<1, blocksize>>>(dotResidual, dotResult, numBlocks, coutPerThread, (i+1)*2);
         }
 
         // step-5: caclulate dir(i+1)
         {
-            update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotR, number, i*2, (i+1)*2);
+            update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, dotResult, number, i*2, (i+1)*2);
         }
     }
 
@@ -1225,6 +1209,140 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     cudaFree(dotDir);
 }
 // Conjugate Gradient solver end
+
+// Multi-Grid Conjugate Gradient solver
+__global__ void mul_kernel(float *result, float *field, float constant, int number)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    if (index < number)
+    {
+        result[index] = field[index] * constant;
+    }
+}
+
+void smoothing(float *b, float *x, float *temp0, float *temp1, float *temp2, float *tempResult, int ni, int nj, int nk)
+{
+    int blocksize = 256;
+    int number = ni * nj * nk;
+    int numBlocks = (number + 255)/256;
+    int coutPerThread = (numBlocks + 255)/256;
+    
+    float *residual = temp0;
+    float *dir = temp1;
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
+    mul_kernel<<<numBlocks, blocksize>>>(dir, residual, -1, number);
+
+    // r.transpose() * r
+    float *dotResidual = temp2;
+    dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
+    calc_sum_kernel<<<1, blocksize>>>(dotResidual, tempResult, numBlocks, coutPerThread, 0);
+
+    // dir.transpose() * A * dir
+    float *aMulDir = temp2;
+    float *dotDir = temp0;
+    calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, aMulDir, ni, nj, nk); 
+    dot_vector_kernel<<<numBlocks, blocksize>>>(dir, aMulDir, dotDir, number);
+    calc_sum_kernel<<<1, blocksize>>>(dotDir, tempResult, numBlocks, coutPerThread, 1);
+
+    update_x_kernel<<<numBlocks, blocksize>>>(x, tempDir, tempResult, number, 0, 1);
+}
+
+__global__ void restriction_kernel(float *residual, float *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
+{
+    int coarseIndex = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ci;
+    int j = (index%(ci*cj))/ci;
+    int k = index/(ci*cj);
+    if (i < ci && j < cj && k < ck)
+    {
+        float value = residual[(2*k+1)*ni*nj + (2*j+1)*ni + 2*i + 1];
+        float value0 = residual[(2*k+1)*ni*nj + (2*j+1)*nj + 2*i + 0];
+        float value1 = residual[(2*k+1)*ni*nj + (2*j+1)*ni + 2*i + 2];
+        float value2 = residual[(2*k+1)*ni*nj + (2*j+0)*ni + 2*i + 1];
+        float value3 = residual[(2*k+1)*ni*nj + (2*j+2)*ni + 2*i + 1];
+        float value4 = residual[(2*k+0)*ni*nj + (2*j+1)*ni + 2*i + 1];
+        float value5 = residual[(2*k+2)*ni*nj + (2*j+1)*ni + 2*i + 1];
+
+        coarseResidual[coarseIndex] = (value0 + value1 + value2 + value3 +value4 + value5 + 6 * value) / 12;
+    }
+}
+
+__glabal__ void prolongation_kernel(float *x, float *coarseX, int ni, int nj, int nk, int ci, int cj, int ck)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i < ni && j < nj && k < nk)
+    {
+        float3 pos = make_float3(float(i)/2.f, float(j)/2.f, float(k)/2.f);
+        x[index] += sample_buffer(coarseX, ci, cj, ck, 1.f, make_float3(0,0,0), pos);
+    }
+}
+
+void V_circle(float *b, float *x, float *residual, float *temp0, float *temp1, float *temp2, float *tempCoarse0, float *tempCoarse1, float *tempResult, int ni, int nj, int nk, int ci, int cj, int ck)
+{
+    int blocksize = 256;
+    int number = ni * nj * nk;
+    int numBlocks = (number + 255)/256;
+
+    smoothing(b, x, temp0, temp1, temp2, tempResult, ni, nj, nk);
+
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
+
+    int coarsenumber = ci * cj * ck;
+    int coarsenumBlocks = (number + 255)/256;
+    float *coarseResidual = tempCoarse0;      // temporary variable
+    restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, coarseResidual, ni, nj, nk, ci, cj, ck);
+
+    float *coarseX = tempCoarse1;
+    cudaMemset(coarseX, 0, coarsenumber*sizeof(float));
+    smoothing(coarseResidual, coarseX, temp0, temp1, temp2, tempResult, ci, cj, ck);
+
+    prolongation_kernel<<<numBlocks, blocksize>>>(x, coarseX, ni, nj, nk, ci, cj, ck);
+}
+
+extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *temp0, float *temp1, float *temp2, float *tempCoarse0, float *tempCoarse1, float *tempResult, int ni, int nj, int nk, int iter, float halfrdx)
+{
+    int blocksize = 256;
+    int number = ni * nj * nk;
+    int numBlocks = (number + 255)/256;
+    divergence_kernel<<<numBlocks, blocksize>>>(u, v, w, div, ni, nj, nk, halfrdx);
+
+    int ci = (ni-1) / 2;
+    int cj = (nj-1) / 2;
+    int ck = (nk-1) / 2;
+
+    cudaMemset(p, 0, coarsenumber*sizeof(float));
+    {
+        update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
+        dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, temp0, number);
+        calc_sum_kernel<<<1, blocksize>>>(temp0, tempResult, numBlocks, coutPerThread, 2);
+    }
+    for (size_t i = 0; i < iter; i++)
+    {
+        V_circle(div, p, residual, temp0, temp1, temp2, temp3, tempCoarse0, tempCoarse1, tempResult, ni, nj, nk, ci, cj, ck);
+
+        {
+            update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
+            dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, temp0, number);
+            calc_sum_kernel<<<1, blocksize>>>(temp0, tempResult, numBlocks, coutPerThread, i+3);
+        }
+    }
+    
+    number = (ni + 1) * nj * nk;
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(u, p, ni + 1, nj, nk, 1, 0, 0, halfrdx);
+
+    number = ni * (nj + 1) * nk;
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(v, p, ni, nj + 1, nk, 0, 1, 0, halfrdx);
+
+    number = ni * nj * (nk + 1);
+    numBlocks = (number + 255)/256;
+    gradient_kernel<<<numBlocks, blocksize>>>(w, p, ni, nj, nk + 1, 0, 0, 1, halfrdx);
+}
+// Multi-Grid Conjugate Gradient solver end
 
 // jacobi iteration for projection
 __global__ void jacobi_kernel(float *p, float *div, float *outP, int ni, int nj, int nk, float alpha, float beta)

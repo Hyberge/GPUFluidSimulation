@@ -375,7 +375,7 @@ void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp0, float *filed
 
 void BimocqGPUSolver::projection()
 {
-#if 1   // jacobi iteration
+#if 0   // jacobi iteration
     int iter = 50;
     GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1, 1.0 / 6.0);
 
@@ -411,6 +411,16 @@ void BimocqGPUSolver::projection()
     cout << endl << endl;
 #else
     // MG-CG solver
+    int iter = 50;
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, p_temp, DensityTemp, TemperatureTemp, VelocityUTemp, VelocityVTemp, VelocityWTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ);
+
+    GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
+    cout << "Residual: " << endl;
+    for(int i = 0; i <= iter; ++i)
+    {
+        cout << output_u.at(i + 2, 0, 0) << "   ";
+    }
+    cout << endl << endl;
 #endif
 }
 
