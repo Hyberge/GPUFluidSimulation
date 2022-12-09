@@ -411,8 +411,8 @@ void BimocqGPUSolver::projection()
     cout << endl << endl;
 #else
     // MG-CG solver
-    int iter = 50;
-    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, p_temp, DensityTemp, TemperatureTemp, VelocityUTemp, VelocityVTemp, VelocityWTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ);
+    int iter = 10;
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, p_temp, DensityTemp, TemperatureTemp, VelocityUTemp, VelocityVTemp, VelocityWTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5);
 
     GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
     cout << "Residual: " << endl;
