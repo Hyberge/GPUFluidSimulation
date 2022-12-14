@@ -411,8 +411,8 @@ void BimocqGPUSolver::projection()
     cout << endl << endl;
 #else
     // MG-CG solver
-    int iter = 20;
-    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, p_temp, DensityTemp, TemperatureTemp, VelocityUTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1.0/6.0);
+    int iter = 50;
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, p_temp, DensityTemp, TemperatureTemp, VelocityUTemp, VelocityVTemp, VelocityWTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 1, -1.0/6.0);
 
     GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
     cout << "Residual: " << endl;
@@ -420,18 +420,18 @@ void BimocqGPUSolver::projection()
     {
         cout << output_u.at(i*2, 0, 0) << "   ";
     }
-    cout << endl;
-    cout << "Alpha: " << endl;
-    for(int i = 0; i < iter; ++i)
-    {
-        cout << output_u.at(i*2, 0, 0) / output_u.at(i*2 + 1, 0, 0) << "   ";
-    }
-    cout << endl;
-    cout << "Beta: " << endl;
-    for(int i = 0; i < iter; ++i)
-    {
-        cout << output_u.at(i*2, 0, 0) / output_u.at((i+1)*2, 0, 0) << "   ";
-    }
+    //cout << endl;
+    //cout << "Alpha: " << endl;
+    //for(int i = 0; i < iter; ++i)
+    //{
+    //    cout << output_u.at(i*2, 0, 0) / output_u.at(i*2 + 1, 0, 0) << "   ";
+    //}
+    //cout << endl;
+    //cout << "Beta: " << endl;
+    //for(int i = 0; i < iter; ++i)
+    //{
+    //    cout << output_u.at(i*2, 0, 0) / output_u.at((i+1)*2, 0, 0) << "   ";
+    //}
     cout << endl << endl;
 #endif
 }

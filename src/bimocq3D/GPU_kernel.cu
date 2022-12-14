@@ -1286,12 +1286,12 @@ __global__ void prolongation_kernel(float *x, float *coarseX, int ni, int nj, in
     if (i < ni && j < nj && k < nk)
     {
         float3 pos = make_float3(float(i)/2.f, float(j)/2.f, float(k)/2.f);
-        x[index] -= sample_buffer(coarseX, ci, cj, ck, 1.f, make_float3(0,0,0), pos);
+        x[index] += sample_buffer(coarseX, ci, cj, ck, 1.f, make_float3(0,0,0), pos);
     }
 }
 
-void V_circle(float *b, float *x, float *residual, float *dir, float *temp0, float *temp1, float *tempResult, int resultOffset, 
-              int ni, int nj, int nk, int ci, int cj, int ck, float param /* alpha*beta for Jacobi*/)
+void V_circle(float *b, float *x, float *residual, float *dir, float *coarseX, float *coarseDir, float *temp0, float *temp1, float *tempResult, int resultOffset, 
+              int ni, int nj, int nk, float param /* alpha*beta for Jacobi*/)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1302,40 +1302,53 @@ void V_circle(float *b, float *x, float *residual, float *dir, float *temp0, flo
 
     update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
 
+    int ci = (ni-1) / 2;
+    int cj = (nj-1) / 2;
+    int ck = (nk-1) / 2;
+
     int coarsenumber = ci * cj * ck;
     int coarsenumBlocks = (number + 255)/256;
-    float *coarseResidual = temp0;      // temporary variable
-    restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, coarseResidual, ni, nj, nk, ci, cj, ck);
+    if (0)
+    {
+        restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, temp0, ni, nj, nk, ci, cj, ck);
 
-    float *coarseX = temp1;
-    smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, coarseResidual, param, coarsenumber);
+        smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, temp0, param, coarsenumber);
+    }
+    else
+    {
+        cudaMemset(coarseX, 0, coarsenumber*sizeof(float));
+        restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, temp1, ni, nj, nk, ci, cj, ck);
+        update_residual_kernel<<<coarsenumBlocks, blocksize>>>(temp0, temp1, coarseX, ci, cj, ck);
+        mul_kernel<<<coarsenumBlocks, blocksize>>>(coarseDir, temp0, -1, coarsenumber);
 
-    prolongation_kernel<<<numBlocks, blocksize>>>(x, coarseX, ni, nj, nk, ci, cj, ck);
+        dot_vector_kernel<<<coarsenumBlocks, blocksize>>>(temp0, temp0, temp1, coarsenumber);
+        calc_sum_kernel<<<1, blocksize>>>(temp1, tempResult, coarsenumBlocks, (coarsenumBlocks + 255)/256, 1024);
+        
+        smoothing(coarseX, coarseDir, temp0, temp1, tempResult, 1024, ci, cj, ck, blocksize, coarsenumber, coarsenumBlocks, (coarsenumBlocks + 255)/256);
+    }
 
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
+    prolongation_kernel<<<numBlocks, blocksize>>>(residual, coarseX, ni, nj, nk, ci, cj, ck);
+
+    //update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
 
     updateDir(b, x, residual, dir, temp0, tempResult, resultOffset, blocksize, number, numBlocks, coutPerThread);
 
     {
-        dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, temp0, number);
-        calc_sum_kernel<<<1, blocksize>>>(temp0, tempResult, numBlocks, coutPerThread, resultOffset);
-        smoothing(x, dir, temp0, temp1, tempResult, resultOffset, ni, nj, nk, blocksize, number, numBlocks, coutPerThread);
-        update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
-        updateDir(b, x, residual, dir, temp0, tempResult, resultOffset, blocksize, number, numBlocks, coutPerThread);
+        //dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, temp0, number);
+        //calc_sum_kernel<<<1, blocksize>>>(temp0, tempResult, numBlocks, coutPerThread, resultOffset);
+        //smoothing(x, dir, temp0, temp1, tempResult+2, resultOffset, ni, nj, nk, blocksize, number, numBlocks, coutPerThread);
+        //update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
+        //updateDir(b, x, residual, dir, temp0, tempResult+2, resultOffset, blocksize, number, numBlocks, coutPerThread);
     }
 }
 
-extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *temp0, float *temp1, float *tempResult, 
+extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *coarseX, float *coarseDir, float *temp0, float *temp1, float *tempResult, 
                 int ni, int nj, int nk, int iter, float halfrdx, float param)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
     int numBlocks = (number + 255)/256;
     divergence_kernel<<<numBlocks, blocksize>>>(u, v, w, div, ni, nj, nk, halfrdx);
-
-    int ci = (ni-1) / 2;
-    int cj = (nj-1) / 2;
-    int ck = (nk-1) / 2;
 
     int coutPerThread = (numBlocks + 255)/256;
     cudaMemset(p, 0, number*sizeof(float));
@@ -1348,7 +1361,7 @@ extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w ,
 
     for (size_t i = 0; i < iter; i++)
     {
-        V_circle(div, p, residual, dir, temp0, temp1, tempResult, i*2, ni, nj, nk, ci, cj, ck, param);
+        V_circle(div, p, residual, dir, coarseX, coarseDir, temp0, temp1, tempResult, i*2, ni, nj, nk, param);
     }
     
     number = (ni + 1) * nj * nk;

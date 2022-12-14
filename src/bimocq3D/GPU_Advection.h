@@ -92,8 +92,8 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
 
 extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx);
 
-extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *temp0, float *temp1, float *tempResult, 
-                int ni, int nj, int nk, int iter, float halfrdx, float param);
+extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *coarseX, float *coarseDir,
+                float *temp0, float *temp1, float *tempResult, int ni, int nj, int nk, int iter, float halfrdx, float param);
 
 class gpuMapper{
 public:
@@ -600,10 +600,10 @@ public:
         gpu_conjugate_gradient(u, v, w, div, p, residual, dir, dotR, ni, nj, nk, iter, halfrdx);
     }
 
-    void projectionMultiGrid(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *temp0, float *temp1, float *tempResult, 
+    void projectionMultiGrid(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *coarseX, float *coarseDir, float *temp0, float *temp1, float *tempResult, 
                 int ni, int nj, int nk, int iter, float halfrdx, float param)
     {
-        gpu_multi_grid_conjugate_gradient(u, v, w, div, p, dir, residual, temp0, temp1, tempResult, ni, nj, nk, iter, halfrdx, param);
+        gpu_multi_grid_conjugate_gradient(u, v, w, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, ni, nj, nk, iter, halfrdx, param);
     }
 };
 
