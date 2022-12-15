@@ -1008,15 +1008,16 @@ __global__ void gradient_kernel(float *field, float *p, int ni, int nj, int nk, 
   return A * x, where A = [1  -4  1]
                           [0   1  0]
 */
-__device__ float calc_poisson_value(float *x, int i, int j, int k, int ni, int nj, int nk)
+template<typename T>
+__device__ T calc_poisson_value(T *x, int i, int j, int k, int ni, int nj, int nk)
 {
-    float x_center = x[k*ni*nj + j*ni + i];
-    float x_left = x[k*ni*nj + j*ni + i - 1];
-    float x_right = x[k*ni*nj + j*ni + i + 1];
-    float x_front = x[k*ni*nj + (j - 1)*ni + i];
-    float x_back = x[k*ni*nj + (j + 1)*ni + i];
-    float x_down = x[(k - 1)*ni*nj + j*ni + i];
-    float x_up = x[(k + 1)*ni*nj + j*ni + i];
+    T x_center = x[k*ni*nj + j*ni + i];
+    T x_left = x[k*ni*nj + j*ni + i - 1];
+    T x_right = x[k*ni*nj + j*ni + i + 1];
+    T x_front = x[k*ni*nj + (j - 1)*ni + i];
+    T x_back = x[k*ni*nj + (j + 1)*ni + i];
+    T x_down = x[(k - 1)*ni*nj + j*ni + i];
+    T x_up = x[(k + 1)*ni*nj + j*ni + i];
 
     return (x_left + x_right + x_front + x_back + x_down + x_up) - x_center*6;
 }
@@ -1029,79 +1030,115 @@ __global__ void calc_poisson_kernel(float *x, float *b, int ni, int nj, int nk)
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        b[index] = calc_poisson_value(x, i, j, k, ni, nj, nk);
+        b[index] = calc_poisson_value<float>(x, i, j, k, ni, nj, nk);
     }
 }
 
-__shared__ float dotResult[272];
-__global__ void dot_vector_kernel(float *v0, float *v1, float *output, int count)
+__global__ void calc_poisson_kernel(double *x, double *b, int ni, int nj, int nk)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
+    {
+        b[index] = calc_poisson_value<double>(x, i, j, k, ni, nj, nk);
+    }
+}
+
+template<typename T>
+__device__ void dot_vector(T *v0, T *v1, T *output, T *sharedMem, int count)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < count)
     {
-        dotResult[threadIdx.x] = v0[index] * v1[index];
+        sharedMem[threadIdx.x] = v0[index] * v1[index];
     }
     else
     {
-        dotResult[threadIdx.x] = 0;
+        sharedMem[threadIdx.x] = 0;
     }
 
     __syncthreads();
 
     if (threadIdx.x < 16)
     {
-        float sum0 = dotResult[threadIdx.x * 16 + 0]  + dotResult[threadIdx.x * 16 + 1]  + dotResult[threadIdx.x * 16 + 2]  + dotResult[threadIdx.x * 16 + 3] +
-                     dotResult[threadIdx.x * 16 + 4]  + dotResult[threadIdx.x * 16 + 5]  + dotResult[threadIdx.x * 16 + 6]  + dotResult[threadIdx.x * 16 + 7] +
-                     dotResult[threadIdx.x * 16 + 8]  + dotResult[threadIdx.x * 16 + 9]  + dotResult[threadIdx.x * 16 + 10] + dotResult[threadIdx.x * 16 + 11] +
-                     dotResult[threadIdx.x * 16 + 12] + dotResult[threadIdx.x * 16 + 13] + dotResult[threadIdx.x * 16 + 14] + dotResult[threadIdx.x * 16 + 15];
+        float sum0 = sharedMem[threadIdx.x * 16 + 0]  + sharedMem[threadIdx.x * 16 + 1]  + sharedMem[threadIdx.x * 16 + 2]  + sharedMem[threadIdx.x * 16 + 3] +
+                     sharedMem[threadIdx.x * 16 + 4]  + sharedMem[threadIdx.x * 16 + 5]  + sharedMem[threadIdx.x * 16 + 6]  + sharedMem[threadIdx.x * 16 + 7] +
+                     sharedMem[threadIdx.x * 16 + 8]  + sharedMem[threadIdx.x * 16 + 9]  + sharedMem[threadIdx.x * 16 + 10] + sharedMem[threadIdx.x * 16 + 11] +
+                     sharedMem[threadIdx.x * 16 + 12] + sharedMem[threadIdx.x * 16 + 13] + sharedMem[threadIdx.x * 16 + 14] + sharedMem[threadIdx.x * 16 + 15];
         
-        dotResult[threadIdx.x+256] = sum0;
+        sharedMem[threadIdx.x+256] = sum0;
     }
 
     if (threadIdx.x == 0)
     {
-        float sum  = dotResult[256+0]  + dotResult[256+1]  + dotResult[256+2]  + dotResult[+3] +
-                     dotResult[256+4]  + dotResult[256+5]  + dotResult[256+6]  + dotResult[+7] +
-                     dotResult[256+8]  + dotResult[256+9]  + dotResult[256+10] + dotResult[+11] +
-                     dotResult[256+12] + dotResult[256+13] + dotResult[256+14] + dotResult[+15];
+        float sum  = sharedMem[256+0]  + sharedMem[256+1]  + sharedMem[256+2]  + sharedMem[+3] +
+                     sharedMem[256+4]  + sharedMem[256+5]  + sharedMem[256+6]  + sharedMem[+7] +
+                     sharedMem[256+8]  + sharedMem[256+9]  + sharedMem[256+10] + sharedMem[+11] +
+                     sharedMem[256+12] + sharedMem[256+13] + sharedMem[256+14] + sharedMem[+15];
 
         output[blockIdx.x] = sum;
     }
 }
 
-__shared__ float sumResult[272];
-__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, int iterIndex)
+__shared__ float dotResultF[272];
+__global__ void dot_vector_kernel(float *v0, float *v1, float *output, int count)
 {
-    sumResult[threadIdx.x] = 0;
+    dot_vector<float>(v0, v1, output, dotResultF, count);
+}
+
+__shared__ double dotResultD[272];
+__global__ void dot_vector_kernel(double *v0, double *v1, double *output, int count)
+{
+    dot_vector<double>(v0, v1, output, dotResultD, count);
+}
+
+template<typename T>
+__device__ void calc_sum(T *v, float *output, T *sharedMem, int count, int countPerThread, int iterIndex)
+{
+    sharedMem[threadIdx.x] = 0;
 
     int indexStart = threadIdx.x * countPerThread;
     for (int i = 0; i < countPerThread; ++i)
     {
         if (indexStart + i < count)
-            sumResult[threadIdx.x] += v[indexStart + i];
+            sharedMem[threadIdx.x] += v[indexStart + i];
     }
 
     __syncthreads();
 
     if (threadIdx.x < 16)
     {
-        float sum0 = sumResult[threadIdx.x * 16 + 0]  + sumResult[threadIdx.x * 16 + 1]  + sumResult[threadIdx.x * 16 + 2]  + sumResult[threadIdx.x * 16 + 3] +
-                     sumResult[threadIdx.x * 16 + 4]  + sumResult[threadIdx.x * 16 + 5]  + sumResult[threadIdx.x * 16 + 6]  + sumResult[threadIdx.x * 16 + 7] +
-                     sumResult[threadIdx.x * 16 + 8]  + sumResult[threadIdx.x * 16 + 9]  + sumResult[threadIdx.x * 16 + 10] + sumResult[threadIdx.x * 16 + 11] +
-                     sumResult[threadIdx.x * 16 + 12] + sumResult[threadIdx.x * 16 + 13] + sumResult[threadIdx.x * 16 + 14] + sumResult[threadIdx.x * 16 + 15];
+        T sum0 = sharedMem[threadIdx.x * 16 + 0]  + sharedMem[threadIdx.x * 16 + 1]  + sharedMem[threadIdx.x * 16 + 2]  + sharedMem[threadIdx.x * 16 + 3] +
+                 sharedMem[threadIdx.x * 16 + 4]  + sharedMem[threadIdx.x * 16 + 5]  + sharedMem[threadIdx.x * 16 + 6]  + sharedMem[threadIdx.x * 16 + 7] +
+                 sharedMem[threadIdx.x * 16 + 8]  + sharedMem[threadIdx.x * 16 + 9]  + sharedMem[threadIdx.x * 16 + 10] + sharedMem[threadIdx.x * 16 + 11] +
+                 sharedMem[threadIdx.x * 16 + 12] + sharedMem[threadIdx.x * 16 + 13] + sharedMem[threadIdx.x * 16 + 14] + sharedMem[threadIdx.x * 16 + 15];
         
-        sumResult[threadIdx.x+256] = sum0;
+        sharedMem[threadIdx.x+256] = sum0;
     }
 
     if (threadIdx.x == 0)
     {
-        float sum  = sumResult[256+0]  + sumResult[256+1]  + sumResult[256+2]  + sumResult[256+3] +
-                     sumResult[256+4]  + sumResult[256+5]  + sumResult[256+6]  + sumResult[256+7] +
-                     sumResult[256+8]  + sumResult[256+9]  + sumResult[256+10] + sumResult[256+11] +
-                     sumResult[256+12] + sumResult[256+13] + sumResult[256+14] + sumResult[256+15];
+        T sum  = sharedMem[256+0]  + sharedMem[256+1]  + sharedMem[256+2]  + sharedMem[256+3] +
+                 sharedMem[256+4]  + sharedMem[256+5]  + sharedMem[256+6]  + sharedMem[256+7] +
+                 sharedMem[256+8]  + sharedMem[256+9]  + sharedMem[256+10] + sharedMem[256+11]+
+                 sharedMem[256+12] + sharedMem[256+13] + sharedMem[256+14] + sharedMem[256+15];
 
-        output[iterIndex] = sum;
+        output[iterIndex] = (float)sum;
     }
+}
+
+__shared__ float sumResultF[272];
+__global__ void calc_sum_kernel(float *v, float *output, int count, int countPerThread, int iterIndex)
+{
+    calc_sum<float>(v, output, sumResultF, count, countPerThread, iterIndex);
+}
+
+__shared__ double sumResultD[272];
+__global__ void calc_sum_kernel(double *v, float *output, int count, int countPerThread, int iterIndex)
+{
+    calc_sum<double>(v, output, sumResultD, count, countPerThread, iterIndex);
 }
 
 __global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int nj, int nk)
@@ -1112,11 +1149,20 @@ __global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        r[index] = -b[index] + calc_poisson_value(x, i, j, k, ni, nj, nk);
+        r[index] = -b[index] + calc_poisson_value<float>(x, i, j, k, ni, nj, nk);
     }
 }
 
 __global__ void update_x_kernel(float *x, float *dir, float *alpha, int count, int rIndex, int dIndex)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    if (index < count)
+    {
+        x[index] += dir[index] * alpha[rIndex] / alpha[dIndex];
+    }
+}
+
+__global__ void update_x_kernel(double *x, double *dir, float *alpha, int count, int rIndex, int dIndex)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < count)
@@ -1135,6 +1181,15 @@ __global__ void update_dir_kernel(float *dir, float *residual, float *beta, int 
 }
 
 __global__ void mul_kernel(float *result, float *field, float constant, int number)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    if (index < number)
+    {
+        result[index] = field[index] * constant;
+    }
+}
+
+__global__ void mul_kernel(double *result, double *field, double constant, int number)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < number)
@@ -1240,7 +1295,8 @@ __global__ void smoothing_jacobi_kernel(float *x, float *b, float param, int num
     __syncthreads();
 }
 
-void smoothing(float *x, float *dir, float *aMulDir, float *dotDir, float *tempResult, int offset, int ni, int nj, int nk, int blocksize, int number, int numBlocks, int coutPerThread)
+template<typename T>
+void smoothing(T *x, T *dir, T *aMulDir, T *dotDir, float *tempResult, int offset, int ni, int nj, int nk, int blocksize, int number, int numBlocks, int coutPerThread)
 {
     calc_poisson_kernel<<<numBlocks, blocksize>>>(dir, aMulDir, ni, nj, nk);
     dot_vector_kernel<<<numBlocks, blocksize>>>(dir, aMulDir, dotDir, number);
@@ -1257,7 +1313,8 @@ void updateDir(float *b, float *x, float *residual, float *dir, float *dotResidu
     update_dir_kernel<<<numBlocks, blocksize>>>(dir, residual, tempResult, number, offset, offset+2);
 }
 
-__global__ void restriction_kernel(float *residual, float *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
+template<typename T>
+__device__ void restriction(float *residual, T *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
 {
     int coarseIndex = blockDim.x*blockIdx.x + threadIdx.x;
     int i = coarseIndex%ci;
@@ -1274,6 +1331,50 @@ __global__ void restriction_kernel(float *residual, float *coarseResidual, int n
         float value5 = residual[(2*k+2)*ni*nj + (2*j+1)*ni + 2*i + 1];
 
         coarseResidual[coarseIndex] = (value0 + value1 + value2 + value3 +value4 + value5 + 6 * value) / 12;
+    }
+}
+
+__global__ void restriction_kernel(float *residual, double *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
+{
+    restriction<double>(residual, coarseResidual, ni, nj, nk, ci, cj, ck);
+}
+
+__global__ void restriction_kernel(float *residual, float *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
+{
+    restriction<float>(residual, coarseResidual, ni, nj, nk, ci, cj, ck);
+}
+
+__device__ double sample_buffer(double * b, int nx, int ny, int nz, float3 pos)
+{
+    float3 samplepos = pos;
+    int i = int(floorf(samplepos.x));
+    int j = int(floorf(samplepos.y));
+    int k = int(floorf(samplepos.z));
+    float fx = samplepos.x - float(i);
+    float fy = samplepos.y - float(j);
+    float fz = samplepos.z - float(k);
+
+    int idx000 = i + nx*j + nx*ny*k;
+    int idx001 = i + nx*j + nx*ny*k + 1;
+    int idx010 = i + nx*j + nx*ny*k + nx;
+    int idx011 = i + nx*j + nx*ny*k + nx + 1;
+    int idx100 = i + nx*j + nx*ny*k + nx*ny;
+    int idx101 = i + nx*j + nx*ny*k + nx*ny + 1;
+    int idx110 = i + nx*j + nx*ny*k + nx*ny + nx;
+    int idx111 = i + nx*j + nx*ny*k + nx*ny + nx + 1;
+    return triLerp(b[idx000], b[idx001],b[idx010],b[idx011],b[idx100],b[idx101],b[idx110],b[idx111], fx, fy, fz);
+}
+
+__global__ void prolongation_kernel(float *x, double *coarseX, int ni, int nj, int nk, int ci, int cj, int ck)
+{
+    int index = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i < ni && j < nj && k < nk)
+    {
+        float3 pos = make_float3(float(i)/2.f, float(j)/2.f, float(k)/2.f);
+        x[index] += (float)sample_buffer(coarseX, ci, cj, ck, pos);
     }
 }
 
@@ -1298,7 +1399,7 @@ void V_circle(float *b, float *x, float *residual, float *dir, float *coarseX, f
     int numBlocks = (number + 255)/256;
     int coutPerThread = (numBlocks + 255)/256;
 
-    smoothing(x, dir, temp0, temp1, tempResult, resultOffset, ni, nj, nk, blocksize, number, numBlocks, coutPerThread);
+    smoothing<float>(x, dir, temp0, temp1, tempResult, resultOffset, ni, nj, nk, blocksize, number, numBlocks, coutPerThread);
 
     update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
 
@@ -1311,25 +1412,32 @@ void V_circle(float *b, float *x, float *residual, float *dir, float *coarseX, f
     if (0)
     {
         restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, temp0, ni, nj, nk, ci, cj, ck);
-
+        
         smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, temp0, param, coarsenumber);
+        
+        prolongation_kernel<<<numBlocks, blocksize>>>(x, coarseX, ni, nj, nk, ci, cj, ck);
+
+        update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
     }
     else
     {
         cudaMemset(coarseX, 0, coarsenumber*sizeof(float));
-        restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, temp1, ni, nj, nk, ci, cj, ck);
-        update_residual_kernel<<<coarsenumBlocks, blocksize>>>(temp0, temp1, coarseX, ci, cj, ck);
-        mul_kernel<<<coarsenumBlocks, blocksize>>>(coarseDir, temp0, -1, coarsenumber);
+        double *coarseB = (double*)temp1;
+        restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, coarseB, ni, nj, nk, ci, cj, ck);
+        double *coarseR = (double*)temp0;
+        mul_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, -1, coarsenumber);
+        cudaMemcpy(coarseDir, coarseB, coarsenumber * sizeof(double), cudaMemcpyDeviceToDevice);
 
-        dot_vector_kernel<<<coarsenumBlocks, blocksize>>>(temp0, temp0, temp1, coarsenumber);
-        calc_sum_kernel<<<1, blocksize>>>(temp1, tempResult, coarsenumBlocks, (coarsenumBlocks + 255)/256, 1024);
+        double *dotCoarseR = (double*)temp1;
+        dot_vector_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseR, dotCoarseR, coarsenumber);
+        calc_sum_kernel<<<1, blocksize>>>(dotCoarseR, tempResult, coarsenumBlocks, (coarsenumBlocks + 255)/256, 2000+resultOffset);
         
-        smoothing(coarseX, coarseDir, temp0, temp1, tempResult, 1024, ci, cj, ck, blocksize, coarsenumber, coarsenumBlocks, (coarsenumBlocks + 255)/256);
+        smoothing<double>((double*)coarseX, (double*)coarseDir, (double*)temp0, (double*)temp1, tempResult, 2000+resultOffset, ci, cj, ck, blocksize, coarsenumber, coarsenumBlocks, (coarsenumBlocks + 255)/256);
+
+        prolongation_kernel<<<numBlocks, blocksize>>>(x, (double*)coarseX, ni, nj, nk, ci, cj, ck);
+
+        update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
     }
-
-    prolongation_kernel<<<numBlocks, blocksize>>>(residual, coarseX, ni, nj, nk, ci, cj, ck);
-
-    //update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
 
     updateDir(b, x, residual, dir, temp0, tempResult, resultOffset, blocksize, number, numBlocks, coutPerThread);
 
