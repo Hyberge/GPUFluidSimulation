@@ -57,9 +57,16 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
     GpuSolver->allocGPUBuffer((void**)&TemperatureTemp, ScaleFieldSize);
     GpuSolver->allocGPUBuffer((void**)&TemperatureExtern, ScaleFieldSize);
 
-    GpuSolver->allocGPUBuffer((void**)&p, ScaleFieldSize);
-    GpuSolver->allocGPUBuffer((void**)&p_temp, ScaleFieldSize);
-    GpuSolver->allocGPUBuffer((void**)&div, ScaleFieldSize);
+    float projectionBufferSize = nx * ny * nz * sizeof(double);
+    GpuSolver->allocGPUBuffer((void**)&p, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&dir, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&residual, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&coarseX, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&coarseDir, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&temp0, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&temp1, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&tempResult, 4096*sizeof(double));
+    GpuSolver->allocGPUBuffer((void**)&div, projectionBufferSize);
 
     VelocityAdvector.init(CellNumberX, CellNumberY, CellNumberZ, CellSize, blend_coeff, mymapper);
     ScalarAdvector.init(CellNumberX, CellNumberY, CellNumberZ, CellSize, blend_coeff, mymapper);
@@ -73,6 +80,8 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
     host_u = new float[(CellNumberX+1)*CellNumberY*CellNumberZ];
     host_v = new float[CellNumberX*(CellNumberY+1)*CellNumberZ];
     host_w = new float[CellNumberX*CellNumberY*(CellNumberZ+1)];
+
+    host_p = new double[nx * ny * nz];
 }
 
 void BimocqGPUSolver::advance(int framenum, float dt)
@@ -412,25 +421,25 @@ void BimocqGPUSolver::projection()
 #else
     // MG-CG solver
     int iter = 50;
-    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, p_temp, DensityTemp, TemperatureTemp, VelocityUPrev, VelocityVPrev, VelocityWPrev, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1.0/6.0);
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1.0/6.0);
 
-    GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
+    GpuSolver->copyDeviceToHost(host_p, tempResult, 4096*sizeof(double));
     cout << "Residual: " << endl;
     for(int i = 0; i <= iter; ++i)
     {
-        cout << output_u.at(i*2, 0, 0) << "   ";
+        cout << host_p[i*2] << "   ";
     }
     //cout << endl;
     //cout << "Alpha: " << endl;
     //for(int i = 0; i < iter; ++i)
     //{
-    //    cout << output_u.at(i*2, 0, 0) / output_u.at(i*2 + 1, 0, 0) << "   ";
+    //    cout << host_p[i*2 + 2000] << "   ";
     //}
     //cout << endl;
     //cout << "Beta: " << endl;
     //for(int i = 0; i < iter; ++i)
     //{
-    //    cout << output_u.at(i*2, 0, 0) / output_u.at((i+1)*2, 0, 0) << "   ";
+    //    cout << host_p[i*2 + 2001] << "   ";
     //}
     cout << endl << endl;
 #endif

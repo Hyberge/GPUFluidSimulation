@@ -92,8 +92,8 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
 
 extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx);
 
-extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *coarseX, float *coarseDir,
-                float *temp0, float *temp1, float *tempResult, int ni, int nj, int nk, int iter, float halfrdx, float param);
+extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *coarseX, double *coarseDir,
+                double *temp0, double *temp1, double *tempResult, int ni, int nj, int nk, int iter, double halfrdx, double param);
 
 class gpuMapper{
 public:
@@ -289,6 +289,13 @@ public:
     void copyHostToDevice(float *host_field, float *device_field, size_t size)
     {
          cudaError_t ret = cudaMemcpy(device_field, host_field, size, cudaMemcpyHostToDevice);
+         if (ret != cudaSuccess)
+            cout << "cuda Error: " << ret << endl << "  " << cudaGetErrorString(ret) << endl;
+    }
+
+    void copyDeviceToHost(double *host_field, double *device_field, size_t size)
+    {
+         cudaError_t ret = cudaMemcpy(host_field, device_field, size, cudaMemcpyDeviceToHost);
          if (ret != cudaSuccess)
             cout << "cuda Error: " << ret << endl << "  " << cudaGetErrorString(ret) << endl;
     }
@@ -600,8 +607,8 @@ public:
         gpu_conjugate_gradient(u, v, w, div, p, residual, dir, dotR, ni, nj, nk, iter, halfrdx);
     }
 
-    void projectionMultiGrid(float *u, float *v, float *w , float *div, float *p, float *dir, float *residual, float *coarseX, float *coarseDir, float *temp0, float *temp1, float *tempResult, 
-                int ni, int nj, int nk, int iter, float halfrdx, float param)
+    void projectionMultiGrid(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *coarseX, double *coarseDir, double *temp0, double *temp1, double *tempResult, 
+                int ni, int nj, int nk, int iter, double halfrdx, double param)
     {
         gpu_multi_grid_conjugate_gradient(u, v, w, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, ni, nj, nk, iter, halfrdx, param);
     }
