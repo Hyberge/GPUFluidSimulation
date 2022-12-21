@@ -1188,6 +1188,43 @@ __global__ void calc_sum_kernel(double *v, double *output, int count, int countP
     calc_sum<double>(v, output, sumResultD, count, countPerThread, iterIndex, useAbs);
 }
 
+__shared__ double maxResultD[272];
+__global__ void calc_max_kernel(double *v, double *output, int count, int countPerThread, int iterIndex, bool useAbs = false)
+{
+    maxResultD[threadIdx.x] = 0;
+
+    for (int i = 0; i < countPerThread; ++i)
+    {
+        int index = i * blockDim.x + threadIdx.x;
+        if (index < count)
+        {
+            maxResultD[threadIdx.x] = max(v[index], maxResultD[threadIdx.x]);
+        }
+    }
+
+    __syncthreads();
+
+    if (threadIdx.x < 16)
+    {
+        double max0 = max(max(maxResultD[threadIdx.x * 16 + 0] ,maxResultD[threadIdx.x * 16 + 1] ), max(maxResultD[threadIdx.x * 16 + 2] , maxResultD[threadIdx.x * 16 + 3] ));
+        double max1 = max(max(maxResultD[threadIdx.x * 16 + 4] ,maxResultD[threadIdx.x * 16 + 5] ), max(maxResultD[threadIdx.x * 16 + 6] , maxResultD[threadIdx.x * 16 + 7] ));
+        double max2 = max(max(maxResultD[threadIdx.x * 16 + 8] ,maxResultD[threadIdx.x * 16 + 9] ), max(maxResultD[threadIdx.x * 16 + 10], maxResultD[threadIdx.x * 16 + 11]));
+        double max3 = max(max(maxResultD[threadIdx.x * 16 + 12],maxResultD[threadIdx.x * 16 + 13]), max(maxResultD[threadIdx.x * 16 + 14], maxResultD[threadIdx.x * 16 + 15]));
+        
+        maxResultD[threadIdx.x+256] = max(max(max0, max1), max(max2, max3));
+    }
+
+    if (threadIdx.x == 0)
+    {
+        double max0 = max(max(maxResultD[256+0] ,maxResultD[256+1] ), max(maxResultD[256+2] , maxResultD[256+3] ));
+        double max1 = max(max(maxResultD[256+4] ,maxResultD[256+5] ), max(maxResultD[256+6] , maxResultD[256+7] ));
+        double max2 = max(max(maxResultD[256+8] ,maxResultD[256+9] ), max(maxResultD[256+10], maxResultD[256+11]));
+        double max3 = max(max(maxResultD[256+12],maxResultD[256+13]), max(maxResultD[256+14], maxResultD[256+15]));
+
+        output[iterIndex] = max(max(max0, max1), max(max2, max3));
+    }
+}
+
 __global__ void update_residual_kernel(float *r, float *b, float *x, int offset, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
@@ -1342,33 +1379,46 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 // Conjugate Gradient solver end
 
 // Multi-Grid Conjugate Gradient solver
-__global__ void smoothing_jacobi_kernel(float *x, float *b, int offset, float param, int number)
+__global__ void smoothing_jacobi_kernel(float *x, float *b, float alpha, float beta, int offset, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
-    if (index < number)
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
         // x == [0]
-        //float x_left = x[k*nj*ni + j*ni + i - 1];
-        //float x_right = x[k*nj*ni + j*ni + i + 1];
-        //float x_front = x[k*nj*ni + (j-1)*ni + i];
-        //float x_back = x[k*nj*ni + (j+1)*ni + i];
-        //float x_down = x[(k-1)*nj*ni + j*ni + i];
-        //float x_up = x[(k+1)*nj*ni + j*ni + i];
+        float x_left  = x[offset + k*nj*ni + j*ni + i - 1];
+        float x_right = x[offset + k*nj*ni + j*ni + i + 1];
+        float x_front = x[offset + k*nj*ni + (j-1)*ni + i];
+        float x_back  = x[offset + k*nj*ni + (j+1)*ni + i];
+        float x_down  = x[offset + (k-1)*nj*ni + j*ni + i];
+        float x_up    = x[offset + (k+1)*nj*ni + j*ni + i];
 
-        //x[index] = (p_left + p_right + p_front + p_back + p_down + p_up + alpha * b[index]) * beta;
+        x[index+offset] = (x_left + x_right + x_front + x_back + x_down + x_up + alpha * b[index+offset]) * beta;
 
         // normally, we will start iterater with coarseX == [0], so we simplify Jacobi to Mul.
-        x[index+offset] = param * b[index+offset];
+        // x[index+offset] = param * b[index+offset];
     }
     __syncthreads();
 }
 
-__global__ void smoothing_jacobi_kernel(double *x, double *b, int offset, double param, int number)
+__global__ void smoothing_jacobi_kernel(double *x, double *b, double alpha, double beta, int offset, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
-    if (index < number)
+    int i = index%ni;
+    int j = (index%(ni*nj))/ni;
+    int k = index/(ni*nj);
+    if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        x[index+offset] = param * b[index+offset];
+        double x_left  = x[offset + k*nj*ni + j*ni + i - 1];
+        double x_right = x[offset + k*nj*ni + j*ni + i + 1];
+        double x_front = x[offset + k*nj*ni + (j-1)*ni + i];
+        double x_back  = x[offset + k*nj*ni + (j+1)*ni + i];
+        double x_down  = x[offset + (k-1)*nj*ni + j*ni + i];
+        double x_up    = x[offset + (k+1)*nj*ni + j*ni + i];
+
+        x[index+offset] = (x_left + x_right + x_front + x_back + x_down + x_up + alpha * b[index+offset]) * beta;
     }
     __syncthreads();
 }
@@ -1521,7 +1571,7 @@ __global__ void prolongation_kernel(float *x, float *coarseX, int offset0, int o
 }
 
 void V_circle(double *b, double *x, double *residual, double *dir, double *coarseX, double *coarseDir, double *temp0, double *temp1, double *tempResult, int resultOffset, 
-              int ni, int nj, int nk, double param /* alpha*beta for Jacobi*/)
+              int ni, int nj, int nk, double alpha, double beta /* alpha/beta for Jacobi*/)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1542,41 +1592,55 @@ void V_circle(double *b, double *x, double *residual, double *dir, double *coars
     if (1)
     {
         double *coarseB = temp0;
-        double *coarseR = temp1;
         restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, coarseB, 0, 0, ni, nj, nk, ci, cj, ck);
-        update_residual_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, coarseX, 0, ci, cj, ck);
-        smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, coarseR, param, coarsenumber, 0);
-        
-        int vCount = 4;
-        int offset0 = 0;
-        int offset1 = 0;
-        for (int i = 0; i < vCount; i++)
+        smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, coarseB, alpha, beta, 0, ci, cj, ck);
+
+        #if 0
+        #define V_COUNT 4
+        int offset0[V_COUNT];
+        int offset1[V_COUNT];
+        int curOffset = 0;
+        double *coarseR = temp1;
+        for (int i = 0; i < V_COUNT; i++)
         {
-            offset0 = offset1;
-            offset1 += coarsenumber;
+            offset0[i] = curOffset;
+            curOffset += coarsenumber;
+            offset1[i] = curOffset;
+            int li = ci;
+            int lj = cj;
+            int lk = ck;
             ci = (ci - 1)/2;
             cj = (cj - 1)/2;
             ck = (ck - 1)/2;
             coarsenumber = ci * cj * ck;
             coarsenumBlocks = (number + 255)/256;
 
-            update_residual_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, coarseX, offset0, ci, cj, ck);
+            update_residual_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, coarseX, offset0[i], ci, cj, ck);
 
-            restriction_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, offset0, offset1, ni, nj, nk, ci, cj, ck);
-            update_residual_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, coarseX, offset1, ci, cj, ck);
-            smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, coarseR, offset1, param, coarsenumber);
+            restriction_kernel<<<coarsenumBlocks, blocksize>>>(coarseR, coarseB, offset0[i], offset1[i], li, lj, lk, ci, cj, ck);
+            smoothing_jacobi_kernel<<<coarsenumBlocks, blocksize>>>(coarseX, coarseB, alpha, beta, offset1[i], ci, cj, ck);
         }
         
-        for (int i = 0; i < vCount; i++)
+        for (int i = V_COUNT-1; i >= 0; i--)
         {
-            prolongation_kernel<<<numBlocks, blocksize>>>(x, coarseX, 0, 0, ni, nj, nk, ci, cj, ck);
-        }
-        
-        
+            int li = ci * 2 + 1;
+            int lj = cj * 2 + 1;
+            int lk = ck * 2 + 1;
+            int lnumber = li * lj * lk;
+            int lnumBlocks = (lnumber + 255)/256;
 
+            prolongation_kernel<<<lnumBlocks, blocksize>>>(coarseX, coarseX, offset0[i], offset1[i], li, lj, lk, ci, cj, ck);
+
+            smoothing_jacobi_kernel<<<lnumBlocks, blocksize>>>(coarseX, coarseB, alpha, beta, offset1[i], li, lj, lk);
+        }
+        #endif
+        
         prolongation_kernel<<<numBlocks, blocksize>>>(x, coarseX, 0, 0, ni, nj, nk, ci, cj, ck);
         
         update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, 0, ni, nj, nk);
+        {
+            calc_max_kernel<<<1, blocksize>>>(residual,  tempResult, number, (number + 255)/256, 2000+resultOffset);
+        }
     }
     else
     {
@@ -1609,7 +1673,7 @@ void V_circle(double *b, double *x, double *residual, double *dir, double *coars
 }
 
 extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *coarseX, double *coarseDir, double *temp0, double *temp1, double *tempResult, 
-                int ni, int nj, int nk, int iter, double halfrdx, double param)
+                int ni, int nj, int nk, int iter, double halfrdx, double alpha, double beta)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1627,7 +1691,7 @@ extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w ,
 
     for (size_t i = 0; i < iter; i++)
     {
-        V_circle(div, p, residual, dir, coarseX, coarseDir, temp0, temp1, tempResult, i*2, ni, nj, nk, param);
+        V_circle(div, p, residual, dir, coarseX, coarseDir, temp0, temp1, tempResult, i*2, ni, nj, nk, alpha, beta);
     }
     
     number = (ni + 1) * nj * nk;

@@ -386,7 +386,7 @@ void BimocqGPUSolver::projection()
 {
 #if 0   // jacobi iteration
     int iter = 50;
-    GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, div, p, p_temp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1, 1.0 / 6.0);
+    GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, DensityTemp, TemperatureTemp, TempSrcV, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1, 1.0 / 6.0);
 
     GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
     cout << "Residual: " << endl;
@@ -421,13 +421,13 @@ void BimocqGPUSolver::projection()
 #else
     // MG-CG solver
     int iter = 50;
-    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1.0/6.0);
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, 8.0, 1.0/6.0);
 
     GpuSolver->copyDeviceToHost(host_p, tempResult, 4096*sizeof(double));
     cout << "Residual: " << endl;
     for(int i = 0; i <= iter; ++i)
     {
-        cout << host_p[i*2] << "   ";
+        cout << host_p[i*2+2000] << "   ";
     }
     //cout << endl;
     //cout << "Alpha: " << endl;
