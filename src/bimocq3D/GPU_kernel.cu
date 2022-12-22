@@ -1600,7 +1600,20 @@ void V_Cycle(double *b, double *x, double *residual, double *dir, double *coarse
 {
     if (0)
     {
-
+        #define LEVEL_COUNT 4
+        struct
+        {
+            int ni, nj, nk;
+            int offset;
+        } LevelCoarseInfo[LEVEL_COUNT];
+        LevelCoarseInfo[0] = {ni, nj, nk, 0};
+        for (int i = 1; i < LEVEL_COUNT; i++)
+        {
+            LevelCoarseInfo[i].ni = (LevelCoarseInfo[i-1].ni - 1)/2;
+            LevelCoarseInfo[i].nj = (LevelCoarseInfo[i-1].nj - 1)/2;
+            LevelCoarseInfo[i].nk = (LevelCoarseInfo[i-1].nk - 1)/2;
+        }
+        
     }
     else    // 2-level grid
     {
