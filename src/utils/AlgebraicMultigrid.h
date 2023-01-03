@@ -491,10 +491,11 @@ bool AMGPCGSolve(const SparseMatrix<T> &matrix,
 
     int iteration;
     for (iteration = 0; iteration < max_iterations; ++iteration) {
-        multiply(fixed_matrix, s, z);
+        multiply(fixed_matrix, s, z);                                   // s <== dir, z <== A*dir
         double alpha = rho / BLAS::dot(s, z);
-        BLAS::add_scaled(alpha, s, result);
-        BLAS::add_scaled(-alpha, z, r);
+        cout << rho << "    " ;
+        BLAS::add_scaled(alpha, s, result);                             // result == x
+        BLAS::add_scaled(-alpha, z, r);                                 // r <== r - alpha * z(A*dir)
         residual_out = BLAS::abs_max(r);
         if (residual_out <= tol) {
             iterations_out = iteration + 1;
@@ -512,7 +513,7 @@ bool AMGPCGSolve(const SparseMatrix<T> &matrix,
 
             return true;
         }
-        amgPrecond(A_L, R_L, P_L, S_L, z, r);
+        amgPrecond(A_L, R_L, P_L, S_L, z, r);                           // z <== new_r(M-G solve)
         double rho_new = BLAS::dot(z, r);
         double beta = rho_new / rho;
         BLAS::add_scaled(beta, s, z);
