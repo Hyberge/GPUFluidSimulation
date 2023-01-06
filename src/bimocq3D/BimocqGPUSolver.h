@@ -85,8 +85,8 @@ public:
     float *Density = nullptr, *DensityInit = nullptr, *DensityPrev = nullptr, *DensityTemp = nullptr, *DensityExtern = nullptr;
     float *Temperature = nullptr, *TemperatureInit = nullptr, *TemperaturePrev = nullptr, *TemperatureTemp = nullptr, *TemperatureExtern = nullptr;
 
-    double *p = nullptr, *dir = nullptr, *residual = nullptr, *coarseX = nullptr, *coarseDir = nullptr, *temp0 = nullptr, *temp1 = nullptr, *tempResult = nullptr;
-    double *div = nullptr;
+    double *p = nullptr, *dir = nullptr, *residual = nullptr, *div = nullptr, *temp0 = nullptr, *temp1 = nullptr, *tempResult = nullptr;
+    SCoarseLevelInfo levels[LEVEL_COUNT];
     double *host_p;
 
     float *boundaryDesc = nullptr;

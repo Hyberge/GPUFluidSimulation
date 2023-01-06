@@ -11,6 +11,18 @@
 #include "../include/fluid_buffer3D.h"
 #include <tbb/tbb.h>
 
+#define LEVEL_COUNT 4
+struct SCoarseLevelInfo
+{
+    int ni, nj, nk;
+    int number;
+    double alpha;
+    double beta;
+    double *b;
+    double *x;
+    double *r;
+};
+
 extern "C" void gpu_solve_forward(float *u, float *v, float *w,
                                   float *x_fwd, float *y_fwd, float *z_fwd,
                                   float h, int ni, int nj, int nk, float cfldt, float dt);
@@ -92,8 +104,8 @@ extern "C" void gpu_mad(float *field, float *field1, float *field2, float coeff1
 
 extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div, float *p, float *residual, float *dir, float *dotR, int ni, int nj, int nk, int iter, float halfrdx);
 
-extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *coarseX, double *coarseDir,
-                double *temp0, double *temp1, double *tempResult, int ni, int nj, int nk, int iter, double halfrdx, double alpha, double beta);
+extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *temp0, double *temp1, double *tempResult,
+            SCoarseLevelInfo* levels, int levelNum, int iter, double halfrdx);
 
 class gpuMapper{
 public:
@@ -607,10 +619,10 @@ public:
         gpu_conjugate_gradient(u, v, w, div, p, residual, dir, dotR, ni, nj, nk, iter, halfrdx);
     }
 
-    void projectionMultiGrid(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *coarseX, double *coarseDir, double *temp0, double *temp1, double *tempResult, 
-                int ni, int nj, int nk, int iter, double halfrdx, double alpha, double beta)
+    void projectionMultiGrid(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *temp0, double *temp1, double *tempResult,
+            SCoarseLevelInfo* levels, int levelNum, int iter, double halfrdx)
     {
-        gpu_multi_grid_conjugate_gradient(u, v, w, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, ni, nj, nk, iter, halfrdx, alpha, beta);
+        gpu_multi_grid_conjugate_gradient(u, v, w, div, p, dir, residual, temp0, temp1, tempResult, levels, levelNum, iter, halfrdx);
     }
 };
 

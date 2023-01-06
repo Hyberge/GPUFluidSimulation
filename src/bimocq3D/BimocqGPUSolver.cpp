@@ -61,12 +61,33 @@ BimocqGPUSolver::BimocqGPUSolver(uint nx, uint ny, uint nz, float L, float vis_c
     GpuSolver->allocGPUBuffer((void**)&p, projectionBufferSize);
     GpuSolver->allocGPUBuffer((void**)&dir, projectionBufferSize);
     GpuSolver->allocGPUBuffer((void**)&residual, projectionBufferSize);
-    GpuSolver->allocGPUBuffer((void**)&coarseX, projectionBufferSize);
-    GpuSolver->allocGPUBuffer((void**)&coarseDir, projectionBufferSize);
+    GpuSolver->allocGPUBuffer((void**)&div, projectionBufferSize);
     GpuSolver->allocGPUBuffer((void**)&temp0, projectionBufferSize);
     GpuSolver->allocGPUBuffer((void**)&temp1, projectionBufferSize);
     GpuSolver->allocGPUBuffer((void**)&tempResult, 4096*sizeof(double));
-    GpuSolver->allocGPUBuffer((void**)&div, projectionBufferSize);
+    levels[0].ni = nx;
+    levels[0].nj = ny;
+    levels[0].nk = nz;
+    levels[0].number = nx * ny * nz;
+    levels[0].alpha = -1.0;
+    levels[0].beta = 1.0/6.0;
+    GpuSolver->allocGPUBuffer((void**)&levels[0].b, levels[0].number*sizeof(double));
+    GpuSolver->allocGPUBuffer((void**)&levels[0].x, levels[0].number*sizeof(double));
+    GpuSolver->allocGPUBuffer((void**)&levels[0].r, levels[0].number*sizeof(double));
+    for (int i = 1; i < LEVEL_COUNT; ++i)
+    {
+        levels[i].ni = (levels[i-1].ni - 1) / 2;
+        levels[i].nj = (levels[i-1].nj - 1) / 2;
+        levels[i].nk = (levels[i-1].nk - 1) / 2;
+        levels[i].number = levels[i].ni * levels[i].nj * levels[i].nk;
+
+        levels[i].alpha = levels[0].alpha;
+        levels[i].beta = 1.0/6.0;
+
+        GpuSolver->allocGPUBuffer((void**)&levels[i].b, levels[i].number*sizeof(double));
+        GpuSolver->allocGPUBuffer((void**)&levels[i].x, levels[i].number*sizeof(double));
+        GpuSolver->allocGPUBuffer((void**)&levels[i].r, levels[i].number*sizeof(double));
+    }
 
     VelocityAdvector.init(CellNumberX, CellNumberY, CellNumberZ, CellSize, blend_coeff, mymapper);
     ScalarAdvector.init(CellNumberX, CellNumberY, CellNumberZ, CellSize, blend_coeff, mymapper);
@@ -421,19 +442,19 @@ void BimocqGPUSolver::projection()
 #else
     // MG-CG solver
     int iter = 50;
-    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, coarseX, coarseDir, temp0, temp1, tempResult, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, 1.0, 1.0/6.0);
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, temp0, temp1, tempResult, levels, 1, iter, 0.5);
 
     GpuSolver->copyDeviceToHost(host_p, tempResult, 4096*sizeof(double));
     cout << "Residual: " << endl;
     for(int i = 0; i <= iter; ++i)
     {
-        cout << host_p[i*2+2000] << "   ";
+        cout << host_p[i+2000] << "   ";
     }
     //cout << endl;
-    //cout << "Alpha: " << endl;
+    //cout << "Max X: " << endl;
     //for(int i = 0; i < iter; ++i)
     //{
-    //    cout << host_p[i*2 + 2000] << "   ";
+    //    cout << host_p[i+3000] << "   ";
     //}
     //cout << endl;
     //cout << "Beta: " << endl;
