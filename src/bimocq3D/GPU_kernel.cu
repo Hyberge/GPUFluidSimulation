@@ -1046,15 +1046,15 @@ __global__ void gradient_kernel(float *field, float *p, int ni, int nj, int nk, 
                           [0   1  0]
 */
 template<typename T>
-__device__ T calc_poisson_value(T *x, int i, int j, int k, int ni, int nj, int nk, int offset = 0)
+__device__ T calc_poisson_value(T *x, int i, int j, int k, int ni, int nj, int nk)
 {
-    T x_center = x[offset + k*ni*nj + j*ni + i];
-    T x_left   = x[offset + k*ni*nj + j*ni + i - 1];
-    T x_right  = x[offset + k*ni*nj + j*ni + i + 1];
-    T x_front  = x[offset + k*ni*nj + (j - 1)*ni + i];
-    T x_back   = x[offset + k*ni*nj + (j + 1)*ni + i];
-    T x_down   = x[offset + (k - 1)*ni*nj + j*ni + i];
-    T x_up     = x[offset + (k + 1)*ni*nj + j*ni + i];
+    T x_center = x[k*ni*nj + j*ni + i];
+    T x_left   = x[k*ni*nj + j*ni + i - 1];
+    T x_right  = x[k*ni*nj + j*ni + i + 1];
+    T x_front  = x[k*ni*nj + (j - 1)*ni + i];
+    T x_back   = x[k*ni*nj + (j + 1)*ni + i];
+    T x_down   = x[(k - 1)*ni*nj + j*ni + i];
+    T x_up     = x[(k + 1)*ni*nj + j*ni + i];
 
     return (x_left + x_right + x_front + x_back + x_down + x_up) - x_center*6;
 }
@@ -1225,7 +1225,7 @@ __global__ void calc_max_kernel(double *v, double *output, int count, int countP
     }
 }
 
-__global__ void update_residual_kernel(float *r, float *b, float *x, int offset, int ni, int nj, int nk)
+__global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1233,11 +1233,11 @@ __global__ void update_residual_kernel(float *r, float *b, float *x, int offset,
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        r[index+offset] = b[index+offset] - calc_poisson_value<float>(x, i, j, k, ni, nj, nk, offset);
+        r[index] = b[index] - calc_poisson_value<float>(x, i, j, k, ni, nj, nk);
     }
 }
 
-__global__ void update_residual_kernel(double *r, double *b, double *x, int offset, int ni, int nj, int nk)
+__global__ void update_residual_kernel(double *r, double *b, double *x, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1245,11 +1245,11 @@ __global__ void update_residual_kernel(double *r, double *b, double *x, int offs
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        r[index+offset] = b[index+offset] - calc_poisson_value<double>(x, i, j, k, ni, nj, nk, offset);
+        r[index] = b[index] - calc_poisson_value<double>(x, i, j, k, ni, nj, nk);
     }
 }
 
-__global__ void update_residual_kernel(double *r, double *aMulDir, double *alpha, int rIndex, int dIndex, int number)
+__global__ void update_residual_cg_kernel(double *r, double *aMulDir, double *alpha, int rIndex, int dIndex, int number)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     if (index < number)
@@ -1332,7 +1332,7 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     // we start with x = [0], so r0 == b
     size_t bufferSize = number * sizeof(float);
     //cudaMemcpy(residual, div, bufferSize, cudaMemcpyDeviceToDevice);
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, 0, ni, nj, nk);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
     // first iterater, dir0 == -r0
     mul_kernel<<<numBlocks, blocksize>>>(dir, residual, -1, number);
 
@@ -1365,7 +1365,7 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 
         // step-3: calculate r(i+1)
         {
-            update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, 0, ni, nj, nk);
+            update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
         }
 
         // step-4: calculate beta(i+1)
@@ -1398,7 +1398,7 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
 // Conjugate Gradient solver end
 
 // Multi-Grid Conjugate Gradient solver
-__global__ void smoothing_jacobi_kernel(float *x, float *b, float *out, float alpha, float beta, int offset, int ni, int nj, int nk)
+__global__ void smoothing_jacobi_kernel(float *x, float *b, float *out, float alpha, float beta, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1407,22 +1407,22 @@ __global__ void smoothing_jacobi_kernel(float *x, float *b, float *out, float al
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
         // x == [0]
-        float x_left  = x[offset + k*nj*ni + j*ni + i - 1];
-        float x_right = x[offset + k*nj*ni + j*ni + i + 1];
-        float x_front = x[offset + k*nj*ni + (j-1)*ni + i];
-        float x_back  = x[offset + k*nj*ni + (j+1)*ni + i];
-        float x_down  = x[offset + (k-1)*nj*ni + j*ni + i];
-        float x_up    = x[offset + (k+1)*nj*ni + j*ni + i];
+        float x_left  = x[k*nj*ni + j*ni + i - 1];
+        float x_right = x[k*nj*ni + j*ni + i + 1];
+        float x_front = x[k*nj*ni + (j-1)*ni + i];
+        float x_back  = x[k*nj*ni + (j+1)*ni + i];
+        float x_down  = x[(k-1)*nj*ni + j*ni + i];
+        float x_up    = x[(k+1)*nj*ni + j*ni + i];
 
-        out[index+offset] = ((x_left + x_right + x_front + x_back + x_down + x_up) + alpha * b[index+offset]) * beta;
+        out[index] = ((x_left + x_right + x_front + x_back + x_down + x_up) + alpha * b[index]) * beta;
 
         // normally, we will start iterater with coarseX == [0], so we simplify Jacobi to Mul.
-        // x[index+offset] = param * b[index+offset];
+        // x[index] = param * b[index];
     }
     __syncthreads();
 }
 
-__global__ void smoothing_jacobi_kernel(double *x, double *b, double *out, double alpha, double beta, int offset, int ni, int nj, int nk)
+__global__ void smoothing_jacobi_kernel(double *x, double *b, double *out, double alpha, double beta, int ni, int nj, int nk)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1430,20 +1430,20 @@ __global__ void smoothing_jacobi_kernel(double *x, double *b, double *out, doubl
     int k = index/(ni*nj);
     if (i>0 && i<ni-1&& j>0 && j<nj-1 && k>0 && k<nk-1)
     {
-        double x_left  = x[offset + k*nj*ni + j*ni + i - 1];
-        double x_right = x[offset + k*nj*ni + j*ni + i + 1];
-        double x_front = x[offset + k*nj*ni + (j-1)*ni + i];
-        double x_back  = x[offset + k*nj*ni + (j+1)*ni + i];
-        double x_down  = x[offset + (k-1)*nj*ni + j*ni + i];
-        double x_up    = x[offset + (k+1)*nj*ni + j*ni + i];
+        double x_left  = x[k*nj*ni + j*ni + i - 1];
+        double x_right = x[k*nj*ni + j*ni + i + 1];
+        double x_front = x[k*nj*ni + (j-1)*ni + i];
+        double x_back  = x[k*nj*ni + (j+1)*ni + i];
+        double x_down  = x[(k-1)*nj*ni + j*ni + i];
+        double x_up    = x[(k+1)*nj*ni + j*ni + i];
 
-        out[index+offset] = ((x_left + x_right + x_front + x_back + x_down + x_up) + alpha * b[index+offset]) * beta;
+        out[index] = ((x_left + x_right + x_front + x_back + x_down + x_up) + alpha * b[index]) * beta;
     }
     __syncthreads();
 }
 
 template<typename T>
-void smoothing_jacobi(T *x, T *b, T *tempX, T alpha, T beta, int offset, int ni, int nj, int nk, int iter)
+void smoothing_jacobi(T *x, T *b, T *tempX, T alpha, T beta, int ni, int nj, int nk, int iter)
 {
     int blocksize = 256;
     int number = ni * nj * nk;
@@ -1456,7 +1456,7 @@ void smoothing_jacobi(T *x, T *b, T *tempX, T alpha, T beta, int offset, int ni,
     T *x_out = tempX;
     for (int i = 0; i < iter; ++i)
     {
-        smoothing_jacobi_kernel<<<numBlocks, blocksize>>>(x_in, b, x_out, alpha, beta, offset, ni, nj, nk);
+        smoothing_jacobi_kernel<<<numBlocks, blocksize>>>(x_in, b, x_out, alpha, beta, ni, nj, nk);
 
         // swap
         T *temp = x_in;
@@ -1474,7 +1474,7 @@ void smoothing_conjugate_gradient(T *b, T *x, T *dir, T *residual, T *aMulDir, T
 
     update_x_kernel<<<numBlocks, blocksize>>>(x, dir, tempResult, number, offset, offset+1);
 
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, 0, ni, nj, nk);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
 }
 
 template<typename T>
@@ -1510,7 +1510,7 @@ __device__ T triLerp_t(T v000, T v001, T v010, T v011, T v100, T v101,
 }
 
 template<typename T>
-__device__ T sample_buffer(T * b, int offset, int nx, int ny, int nz, float3 pos)
+__device__ T sample_buffer(T * b, int nx, int ny, int nz, float3 pos)
 {
     float3 samplepos = pos;
     int i = int(floorf(samplepos.x));
@@ -1520,19 +1520,19 @@ __device__ T sample_buffer(T * b, int offset, int nx, int ny, int nz, float3 pos
     T fy = samplepos.y - float(j);
     T fz = samplepos.z - float(k);
 
-    int idx000 = offset + i + nx*j + nx*ny*k;
-    int idx001 = offset + i + nx*j + nx*ny*k + 1;
-    int idx010 = offset + i + nx*j + nx*ny*k + nx;
-    int idx011 = offset + i + nx*j + nx*ny*k + nx + 1;
-    int idx100 = offset + i + nx*j + nx*ny*k + nx*ny;
-    int idx101 = offset + i + nx*j + nx*ny*k + nx*ny + 1;
-    int idx110 = offset + i + nx*j + nx*ny*k + nx*ny + nx;
-    int idx111 = offset + i + nx*j + nx*ny*k + nx*ny + nx + 1;
+    int idx000 = i + nx*j + nx*ny*k;
+    int idx001 = i + nx*j + nx*ny*k + 1;
+    int idx010 = i + nx*j + nx*ny*k + nx;
+    int idx011 = i + nx*j + nx*ny*k + nx + 1;
+    int idx100 = i + nx*j + nx*ny*k + nx*ny;
+    int idx101 = i + nx*j + nx*ny*k + nx*ny + 1;
+    int idx110 = i + nx*j + nx*ny*k + nx*ny + nx;
+    int idx111 = i + nx*j + nx*ny*k + nx*ny + nx + 1;
     return triLerp_t(b[idx000], b[idx001],b[idx010],b[idx011],b[idx100],b[idx101],b[idx110],b[idx111], fx, fy, fz);
 }
 
 template<typename T>
-__device__ void restriction(T *residual, T *coarseResidual, int offset0, int offset1, int ni, int nj, int nk, int ci, int cj, int ck)
+__device__ void restriction(T *residual, T *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
 {
     int coarseIndex = blockDim.x*blockIdx.x + threadIdx.x;
     int i = coarseIndex%ci;
@@ -1551,44 +1551,44 @@ __device__ void restriction(T *residual, T *coarseResidual, int offset0, int off
         //coarseResidual[coarseIndex] = residual[(2*k+1)*ni*nj + (2*j+1)*ni + 2*i + 1];
 
         float3 point = make_float3(2*i + 0.5, 2*j + 0.5, 2*k + 0.5);
-        T value0 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value0 = sample_buffer(residual, ni, nj, nk, point);
 
         point = make_float3(2*i + 0.5, 2*j + 0.5, 2*k + 1.5);
-        T value1 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value1 = sample_buffer(residual, ni, nj, nk, point);
         
         point = make_float3(2*i + 0.5, 2*j + 1.5, 2*k + 0.5);
-        T value2= sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value2= sample_buffer(residual, ni, nj, nk, point);
 
         point = make_float3(2*i + 0.5, 2*j + 1.5, 2*k + 1.5);
-        T value3 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value3 = sample_buffer(residual, ni, nj, nk, point);
 
         point = make_float3(2*i + 1.5, 2*j + 0.5, 2*k + 0.5);
-        T value4 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value4 = sample_buffer(residual, ni, nj, nk, point);
 
         point = make_float3(2*i + 1.5, 2*j + 0.5, 2*k + 1.5);
-        T value5 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value5 = sample_buffer(residual, ni, nj, nk, point);
         
         point = make_float3(2*i + 1.5, 2*j + 1.5, 2*k + 0.5);
-        T value6 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value6 = sample_buffer(residual, ni, nj, nk, point);
 
         point = make_float3(2*i + 1.5, 2*j + 1.5, 2*k + 1.5);
-        T value7 = sample_buffer(residual, offset0, ni, nj, nk, point);
+        T value7 = sample_buffer(residual, ni, nj, nk, point);
 
-        coarseResidual[coarseIndex+offset1] = (value0 + value1 + value2 + value3 +value4 + value5 + value6 + value7) / 8;
+        coarseResidual[coarseIndex] = (value0 + value1 + value2 + value3 +value4 + value5 + value6 + value7) / 8;
     }
 }
 
-__global__ void restriction_kernel(double *residual, double *coarseResidual, int offset0, int offset1, int ni, int nj, int nk, int ci, int cj, int ck)
+__global__ void restriction_kernel(double *residual, double *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
 {
-    restriction<double>(residual, coarseResidual, offset0, offset1, ni, nj, nk, ci, cj, ck);
+    restriction<double>(residual, coarseResidual, ni, nj, nk, ci, cj, ck);
 }
 
-__global__ void restriction_kernel(float *residual, float *coarseResidual, int offset0, int offset1, int ni, int nj, int nk, int ci, int cj, int ck)
+__global__ void restriction_kernel(float *residual, float *coarseResidual, int ni, int nj, int nk, int ci, int cj, int ck)
 {
-    restriction<float>(residual, coarseResidual, offset0, offset1, ni, nj, nk, ci, cj, ck);
+    restriction<float>(residual, coarseResidual, ni, nj, nk, ci, cj, ck);
 }
 
-__global__ void prolongation_kernel(double *x, double *coarseX, int offset0, int offset1, int ni, int nj, int nk, int ci, int cj, int ck)
+__global__ void prolongation_kernel(double *x, double *coarseX, int ni, int nj, int nk, int ci, int cj, int ck)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1597,11 +1597,11 @@ __global__ void prolongation_kernel(double *x, double *coarseX, int offset0, int
     if (i > 0 && i < ni-1 && j > 0 && j < nj-1 && k > 0 && k < nk-1)
     {
         float3 pos = make_float3(float(i)/2.f - 0.5, float(j)/2.f - 0.5, float(k)/2.f - 0.5);
-        x[index+offset0] += sample_buffer(coarseX, offset1, ci, cj, ck, pos);
+        x[index] += sample_buffer(coarseX, ci, cj, ck, pos);
     }
 }
 
-__global__ void prolongation_kernel(float *x, float *coarseX, int offset0, int offset1, int ni, int nj, int nk, int ci, int cj, int ck)
+__global__ void prolongation_kernel(float *x, float *coarseX, int ni, int nj, int nk, int ci, int cj, int ck)
 {
     int index = blockDim.x*blockIdx.x + threadIdx.x;
     int i = index%ni;
@@ -1610,7 +1610,7 @@ __global__ void prolongation_kernel(float *x, float *coarseX, int offset0, int o
     if (i > 0 && i < ni && j > 0 && j < nj && k > 0 && k < nk)
     {
         float3 pos = make_float3(float(i)/2.f - 0.5, float(j)/2.f - 0.5, float(k)/2.f - 0.5);
-        x[index+offset0] += sample_buffer(coarseX, offset1, ci, cj, ck, pos);
+        x[index] += sample_buffer(coarseX, ci, cj, ck, pos);
     }
 }
 
@@ -1629,27 +1629,27 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
         int numBlocks = (levels[i].number + 255) / blocksize;
         int coarsenumBlocks = (levels[i+1].number + 255) / blocksize;
 
-        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, 0, levels[i].ni, levels[i].nj, levels[i].nk, 4);
+        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
 
-        update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, 0, levels[i].ni, levels[i].nj, levels[i].nk);
-        restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, 0, 0, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
+        update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
+        restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
     }
 
-    smoothing_jacobi<double>(levels[levennum-1].x, levels[levennum-1].b, temp1, levels[levennum-1].alpha, levels[levennum-1].beta, 0, levels[levennum-1].ni, levels[levennum-1].nj, levels[levennum-1].nk, 32);
+    smoothing_jacobi<double>(levels[levennum-1].x, levels[levennum-1].b, temp1, levels[levennum-1].alpha, levels[levennum-1].beta, levels[levennum-1].ni, levels[levennum-1].nj, levels[levennum-1].nk, 32);
 
     for (int i = LEVEL_COUNT-2; i >= 0; --i)
     {
         int coarsenumBlocks = (levels[i+1].number + 255) / blocksize;
 
-        prolongation_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].x, levels[i+1].x, 0, 0, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
+        prolongation_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].x, levels[i+1].x, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
 
-        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, 0, levels[i].ni, levels[i].nj, levels[i].nk, 4);
+        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
     }
 
     int numBlocks = (number + 255)/256;
 
     add_kernel<<<numBlocks, blocksize>>>(x, levels[0].x, 1.0, number);
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, 0, ni, nj, nk);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
 }
 // 2-level grid
 void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, double *temp0, double *tempResult, int resultOffset)
@@ -1663,43 +1663,43 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
     if (0)
     {
         cudaMemset(temp0, 0, levels[0].number*sizeof(double));
-        smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, 0, levels[0].ni, levels[0].nj, levels[0].nk, 4);
+        smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, levels[0].ni, levels[0].nj, levels[0].nk, 4);
 
         cudaMemset(levels[0].r, 0, levels[0].number*sizeof(double));
-        update_residual_kernel<<<numBlocks, blocksize>>>(levels[0].r, residual, levels[0].x, 0, levels[0].ni, levels[0].nj, levels[0].nk);
-        restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[0].r, levels[1].b, 0, 0, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
+        update_residual_kernel<<<numBlocks, blocksize>>>(levels[0].r, residual, levels[0].x, levels[0].ni, levels[0].nj, levels[0].nk);
+        restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[0].r, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
     }
     else
     {
-        restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, levels[1].b, 0, 0, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
+        restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
     }
 
     cudaMemset(temp0, 0, levels[0].number*sizeof(double));
     cudaMemset(levels[1].x, 0, levels[1].number*sizeof(double));
-    smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*8.0, levels[1].beta, 0, levels[1].ni, levels[1].nj, levels[1].nk, 32);
+    smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*8.0, levels[1].beta, levels[1].ni, levels[1].nj, levels[1].nk, 32);
 
     {
-        update_residual_kernel<<<coarsenumBlocks, blocksize>>>(levels[1].r, levels[1].b, levels[1].x, 0, levels[1].ni, levels[1].nj, levels[1].nk);
+        update_residual_kernel<<<coarsenumBlocks, blocksize>>>(levels[1].r, levels[1].b, levels[1].x, levels[1].ni, levels[1].nj, levels[1].nk);
     
-        restriction_kernel<<<(levels[2].number + 255)/256, blocksize>>>(levels[1].r, levels[2].b, 0, 0, levels[1].ni, levels[1].nj, levels[1].nk, levels[2].ni, levels[2].nj, levels[2].nk);
+        restriction_kernel<<<(levels[2].number + 255)/256, blocksize>>>(levels[1].r, levels[2].b, levels[1].ni, levels[1].nj, levels[1].nk, levels[2].ni, levels[2].nj, levels[2].nk);
     
         cudaMemset(temp0, 0, levels[0].number*sizeof(double));
         cudaMemset(levels[2].x, 0, levels[2].number*sizeof(double));
-        smoothing_jacobi<double>(levels[2].x, levels[2].b, temp0, levels[2].alpha, levels[2].beta, 0, levels[2].ni, levels[2].nj, levels[2].nk, 32);
+        smoothing_jacobi<double>(levels[2].x, levels[2].b, temp0, levels[2].alpha, levels[2].beta, levels[2].ni, levels[2].nj, levels[2].nk, 32);
         
         cudaMemset(temp0, 0, levels[0].number*sizeof(double));
-        prolongation_kernel<<<coarsenumBlocks, blocksize>>>(levels[1].x, levels[2].x, 0, 0, levels[1].ni, levels[1].nj, levels[1].nk, levels[2].ni, levels[2].nj, levels[2].nk);
+        prolongation_kernel<<<coarsenumBlocks, blocksize>>>(levels[1].x, levels[2].x, levels[1].ni, levels[1].nj, levels[1].nk, levels[2].ni, levels[2].nj, levels[2].nk);
         
-        smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*8.0, levels[1].beta, 0, levels[1].ni, levels[1].nj, levels[1].nk, 4);
+        smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*8.0, levels[1].beta, levels[1].ni, levels[1].nj, levels[1].nk, 4);
     }
     
-    prolongation_kernel<<<numBlocks, blocksize>>>(levels[0].x, levels[1].x, 0, 0, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
+    prolongation_kernel<<<numBlocks, blocksize>>>(levels[0].x, levels[1].x, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
     
     cudaMemset(temp0, 0, levels[0].number*sizeof(double));
-    smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, 0, levels[0].ni, levels[0].nj, levels[0].nk, 4);
+    smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, levels[0].ni, levels[0].nj, levels[0].nk, 4);
 
     add_kernel<<<numBlocks, blocksize>>>(x, levels[0].x, 1.0, levels[0].number);
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, 0, levels[0].ni, levels[0].nj, levels[0].nk);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, levels[0].ni, levels[0].nj, levels[0].nk);
 }
 
 extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w , double *div, double *p, double *dir, double *residual, double *temp0, double *temp1, double *tempResult,
@@ -1715,7 +1715,7 @@ extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w ,
 
     int coutPerThread = (numBlocks + 255)/256;
     cudaMemset(p, 0, number*sizeof(float));
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, 0, ni, nj, nk);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
     mul_kernel<<<numBlocks, blocksize>>>(dir, residual, 1, number);
 
     {
@@ -1789,7 +1789,7 @@ extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div,
     float *dotResidual;
     cudaMalloc(&dotResidual, number * sizeof(float));
     {
-        update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, 0, ni, nj, nk);
+        update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
         dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
         calc_sum_kernel<<<1, blocksize>>>(dotResidual, debugParam, numBlocks, coutPerThread, 0);
     }
@@ -1801,7 +1801,7 @@ extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div,
         jacobi_kernel<<<numBlocks, blocksize>>>(p_in, div, p_out, ni, nj, nk, alpha, beta);
 
         {
-            update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p_out, 0, ni, nj, nk);
+            update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p_out, ni, nj, nk);
             dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
             calc_sum_kernel<<<1, blocksize>>>(dotResidual, debugParam, numBlocks, coutPerThread, i+1);
         }
