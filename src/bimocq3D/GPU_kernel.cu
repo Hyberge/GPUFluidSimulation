@@ -1614,32 +1614,61 @@ __global__ void prolongation_kernel(float *x, float *coarseX, int ni, int nj, in
     }
 }
 
-void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, double *temp0, double *temp1, double *tempResult, int levennum, int resultOffset)
+void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, double *temp0, double *tempResult, int levennum, int resultOffset)
 {
     int blocksize = 256;
+    double scale[LEVEL_COUNT] = {1.0,1.0,1.0,1.0,1.0};
     
-    cudaMemcpy(levels[0].b, residual, levels[0].number*sizeof(double), cudaMemcpyDeviceToDevice);
-
-    for (int i = 0; i < levennum - 1; i++)
+    if (1)
     {
-        int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
-        int coarsenumBlocks = (levels[i+1].number + blocksize - 1) / blocksize;
+        scale[1] = 8.0;
 
-        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
+        cudaMemset(levels[0].x, 0, levels[0].number*sizeof(double));
+        cudaMemcpy(levels[0].b, residual, levels[0].number*sizeof(double), cudaMemcpyDeviceToDevice);
 
-        update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
-        restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
+        restriction_kernel<<<(levels[1].number + blocksize - 1) / blocksize, blocksize>>>(levels[0].b, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
+
+        for (int i = 1; i < levennum - 1; i++)
+        {
+            int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
+            int coarsenumBlocks = (levels[i+1].number + blocksize - 1) / blocksize;
+
+            cudaMemset(temp0, 0, levels[0].number*sizeof(double));
+            cudaMemset(levels[i].x, 0, levels[i].number*sizeof(double));
+            smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 32);
+
+            update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
+            restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
+        }
+    }
+    else
+    {
+        cudaMemcpy(levels[0].b, residual, levels[0].number*sizeof(double), cudaMemcpyDeviceToDevice);
+
+        for (int i = 0; i < levennum - 1; i++)
+        {
+            int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
+            int coarsenumBlocks = (levels[i+1].number + blocksize - 1) / blocksize;
+
+            smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
+
+            update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
+            restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
+        }
     }
 
-    smoothing_jacobi<double>(levels[levennum-1].x, levels[levennum-1].b, temp1, levels[levennum-1].alpha, levels[levennum-1].beta, levels[levennum-1].ni, levels[levennum-1].nj, levels[levennum-1].nk, 32);
+    cudaMemset(temp0, 0, levels[0].number*sizeof(double));
+    cudaMemset(levels[levennum-1].x, 0, levels[levennum-1].number*sizeof(double));
+    smoothing_jacobi<double>(levels[levennum-1].x, levels[levennum-1].b, temp0, levels[levennum-1].alpha*scale[levennum-1], levels[levennum-1].beta, levels[levennum-1].ni, levels[levennum-1].nj, levels[levennum-1].nk, 32);
 
-    for (int i = LEVEL_COUNT-2; i >= 0; --i)
+    for (int i = levennum-2; i >= 0; --i)
     {
         int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
 
         prolongation_kernel<<<numBlocks, blocksize>>>(levels[i].x, levels[i+1].x, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
 
-        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
+        cudaMemset(temp0, 0, levels[0].number*sizeof(double));
+        smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
     }
 
     int numBlocks = (levels[0].number + blocksize - 1)/blocksize;
@@ -1659,7 +1688,7 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
     {
         cudaMemset(temp0, 0, levels[0].number*sizeof(double));
         smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, levels[0].ni, levels[0].nj, levels[0].nk, 4);
-
+    
         cudaMemset(levels[0].r, 0, levels[0].number*sizeof(double));
         update_residual_kernel<<<numBlocks, blocksize>>>(levels[0].r, residual, levels[0].x, levels[0].ni, levels[0].nj, levels[0].nk);
         restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[0].r, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
@@ -1727,7 +1756,8 @@ extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w ,
 
         smoothing_conjugate_gradient<double>(div, p, dir, residual, temp0, temp1, tempResult, resultOffset, ni, nj, nk, blocksize, number, numBlocks, coutPerThread);
 
-        V_Cycle(div, p, residual, levels, temp0, tempResult, i);
+        //V_Cycle(div, p, residual, levels, temp0, tempResult, i);
+        V_Cycle(div, p, residual, levels, temp0, tempResult, 3, i);
 
         {
             calc_max_kernel<<<1, blocksize>>>(residual,  tempResult, number, (number + 255)/256, 2001+i);

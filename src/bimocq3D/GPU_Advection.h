@@ -11,7 +11,7 @@
 #include "../include/fluid_buffer3D.h"
 #include <tbb/tbb.h>
 
-#define LEVEL_COUNT 4
+#define LEVEL_COUNT 5
 struct SCoarseLevelInfo
 {
     int ni, nj, nk;
