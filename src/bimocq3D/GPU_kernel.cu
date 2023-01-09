@@ -1617,17 +1617,13 @@ __global__ void prolongation_kernel(float *x, float *coarseX, int ni, int nj, in
 void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, double *temp0, double *temp1, double *tempResult, int levennum, int resultOffset)
 {
     int blocksize = 256;
-    int ni = levels[0].ni;
-    int nj = levels[0].nj;
-    int nk = levels[0].nk;
-    int number = levels[0].number;
     
-    cudaMemcpy(levels[0].b, residual, number*sizeof(double), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(levels[0].b, residual, levels[0].number*sizeof(double), cudaMemcpyDeviceToDevice);
 
     for (int i = 0; i < levennum - 1; i++)
     {
-        int numBlocks = (levels[i].number + 255) / blocksize;
-        int coarsenumBlocks = (levels[i+1].number + 255) / blocksize;
+        int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
+        int coarsenumBlocks = (levels[i+1].number + blocksize - 1) / blocksize;
 
         smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
 
@@ -1639,17 +1635,16 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
 
     for (int i = LEVEL_COUNT-2; i >= 0; --i)
     {
-        int coarsenumBlocks = (levels[i+1].number + 255) / blocksize;
+        int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
 
-        prolongation_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].x, levels[i+1].x, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
+        prolongation_kernel<<<numBlocks, blocksize>>>(levels[i].x, levels[i+1].x, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
 
         smoothing_jacobi<double>(levels[i].x, levels[i].b, temp1, levels[i].alpha, levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
     }
 
-    int numBlocks = (number + 255)/256;
-
-    add_kernel<<<numBlocks, blocksize>>>(x, levels[0].x, 1.0, number);
-    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, ni, nj, nk);
+    int numBlocks = (levels[0].number + blocksize - 1)/blocksize;
+    add_kernel<<<numBlocks, blocksize>>>(x, levels[0].x, 1.0, levels[0].number);
+    update_residual_kernel<<<numBlocks, blocksize>>>(residual, b, x, levels[0].ni, levels[0].nj, levels[0].nk);
 }
 // 2-level grid
 void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, double *temp0, double *tempResult, int resultOffset)
