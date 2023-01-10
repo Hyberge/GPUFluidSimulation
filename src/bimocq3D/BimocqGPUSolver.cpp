@@ -406,25 +406,25 @@ void BimocqGPUSolver::diffuseField(float *field, float *fieldTemp0, float *filed
 void BimocqGPUSolver::projection()
 {
 #if 0   // jacobi iteration
-    int iter = 50;
+    int iter = 100;
     GpuSolver->projectionJacobi(VelocityU, VelocityV, VelocityW, DensityTemp, TemperatureTemp, TempSrcV, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5, -1, 1.0 / 6.0);
 
-    GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
+    GpuSolver->copyDeviceToHost(host_u, TempSrcU, 4096*sizeof(float));
     cout << "Residual: " << endl;
     for(int i = 0; i <= iter; ++i)
     {
-        cout << output_u.at(i, 0, 0) << "   ";
+        cout << host_u[i+2000] << "   ";
     }
     cout << endl << endl;
 #elif 0  // Conjugate Gradient solver
-    int iter = 50;
-    GpuSolver->projectionConjugateGradient(VelocityU, VelocityV, VelocityW, div, p, p_temp, TemperatureTemp, TempSrcU, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5);
+    int iter = 100;
+    GpuSolver->projectionConjugateGradient(VelocityU, VelocityV, VelocityW, TempSrcU, TempSrcV, TempSrcW, TemperatureTemp, DensityTemp, CellNumberX, CellNumberY, CellNumberZ, iter, 0.5);
 
-    GpuSolver->copyDeviceToHost(output_u, host_u, TempSrcU);
+    GpuSolver->copyDeviceToHost(host_density, DensityTemp, 4096*sizeof(float));
     cout << "Residual: " << endl;
     for(int i = 0; i <= iter; ++i)
     {
-        cout << output_u.at(i*2, 0, 0) << "   ";
+        cout << host_density[i+2000] << "   ";
     }
     //cout << endl;
     //cout << "Alpha: " << endl;
@@ -442,7 +442,7 @@ void BimocqGPUSolver::projection()
 #else
     // MG-CG solver
     int iter = 50;
-    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, temp0, temp1, tempResult, levels, 1, iter, 0.5);
+    GpuSolver->projectionMultiGrid(VelocityU, VelocityV, VelocityW, div, p, dir, residual, temp0, temp1, tempResult, levels, LEVEL_COUNT, iter, 0.5);
 
     GpuSolver->copyDeviceToHost(host_p, tempResult, 4096*sizeof(double));
     cout << "Residual: " << endl;

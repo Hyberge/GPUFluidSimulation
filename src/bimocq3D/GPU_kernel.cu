@@ -1188,17 +1188,17 @@ __global__ void calc_sum_kernel(double *v, double *output, int count, int countP
     calc_sum<double>(v, output, sumResultD, count, countPerThread, iterIndex, useAbs);
 }
 
-__shared__ double maxResultD[272];
-__global__ void calc_max_kernel(double *v, double *output, int count, int countPerThread, int iterIndex, bool useAbs = false)
+template<typename T>
+__device__ void calc_max(T *v, T *output, T *sharedMem, int count, int countPerThread, int iterIndex, bool useAbs = false)
 {
-    maxResultD[threadIdx.x] = 0;
+    sharedMem[threadIdx.x] = 0;
 
     for (int i = 0; i < countPerThread; ++i)
     {
         int index = i * blockDim.x + threadIdx.x;
         if (index < count)
         {
-            maxResultD[threadIdx.x] = max(v[index], maxResultD[threadIdx.x]);
+            sharedMem[threadIdx.x] = max(v[index], sharedMem[threadIdx.x]);
         }
     }
 
@@ -1206,23 +1206,34 @@ __global__ void calc_max_kernel(double *v, double *output, int count, int countP
 
     if (threadIdx.x < 16)
     {
-        double max0 = max(max(maxResultD[threadIdx.x * 16 + 0] ,maxResultD[threadIdx.x * 16 + 1] ), max(maxResultD[threadIdx.x * 16 + 2] , maxResultD[threadIdx.x * 16 + 3] ));
-        double max1 = max(max(maxResultD[threadIdx.x * 16 + 4] ,maxResultD[threadIdx.x * 16 + 5] ), max(maxResultD[threadIdx.x * 16 + 6] , maxResultD[threadIdx.x * 16 + 7] ));
-        double max2 = max(max(maxResultD[threadIdx.x * 16 + 8] ,maxResultD[threadIdx.x * 16 + 9] ), max(maxResultD[threadIdx.x * 16 + 10], maxResultD[threadIdx.x * 16 + 11]));
-        double max3 = max(max(maxResultD[threadIdx.x * 16 + 12],maxResultD[threadIdx.x * 16 + 13]), max(maxResultD[threadIdx.x * 16 + 14], maxResultD[threadIdx.x * 16 + 15]));
+        T max0 = max(max(sharedMem[threadIdx.x * 16 + 0] ,sharedMem[threadIdx.x * 16 + 1] ), max(sharedMem[threadIdx.x * 16 + 2] , sharedMem[threadIdx.x * 16 + 3] ));
+        T max1 = max(max(sharedMem[threadIdx.x * 16 + 4] ,sharedMem[threadIdx.x * 16 + 5] ), max(sharedMem[threadIdx.x * 16 + 6] , sharedMem[threadIdx.x * 16 + 7] ));
+        T max2 = max(max(sharedMem[threadIdx.x * 16 + 8] ,sharedMem[threadIdx.x * 16 + 9] ), max(sharedMem[threadIdx.x * 16 + 10], sharedMem[threadIdx.x * 16 + 11]));
+        T max3 = max(max(sharedMem[threadIdx.x * 16 + 12],sharedMem[threadIdx.x * 16 + 13]), max(sharedMem[threadIdx.x * 16 + 14], sharedMem[threadIdx.x * 16 + 15]));
         
-        maxResultD[threadIdx.x+256] = max(max(max0, max1), max(max2, max3));
+        sharedMem[threadIdx.x+256] = max(max(max0, max1), max(max2, max3));
     }
 
     if (threadIdx.x == 0)
     {
-        double max0 = max(max(maxResultD[256+0] ,maxResultD[256+1] ), max(maxResultD[256+2] , maxResultD[256+3] ));
-        double max1 = max(max(maxResultD[256+4] ,maxResultD[256+5] ), max(maxResultD[256+6] , maxResultD[256+7] ));
-        double max2 = max(max(maxResultD[256+8] ,maxResultD[256+9] ), max(maxResultD[256+10], maxResultD[256+11]));
-        double max3 = max(max(maxResultD[256+12],maxResultD[256+13]), max(maxResultD[256+14], maxResultD[256+15]));
+        T max0 = max(max(sharedMem[256+0] ,sharedMem[256+1] ), max(sharedMem[256+2] , sharedMem[256+3] ));
+        T max1 = max(max(sharedMem[256+4] ,sharedMem[256+5] ), max(sharedMem[256+6] , sharedMem[256+7] ));
+        T max2 = max(max(sharedMem[256+8] ,sharedMem[256+9] ), max(sharedMem[256+10], sharedMem[256+11]));
+        T max3 = max(max(sharedMem[256+12],sharedMem[256+13]), max(sharedMem[256+14], sharedMem[256+15]));
 
         output[iterIndex] = max(max(max0, max1), max(max2, max3));
     }
+}
+
+__shared__ double maxResultD[272];
+__global__ void calc_max_kernel(double *v, double *output, int count, int countPerThread, int iterIndex, bool useAbs = false)
+{
+    calc_max<double>(v, output, maxResultD, count, countPerThread, iterIndex, useAbs);
+}
+__shared__ float maxResultF[272];
+__global__ void calc_max_kernel(float *v, float *output, int count, int countPerThread, int iterIndex, bool useAbs = false)
+{
+    calc_max<float>(v, output, maxResultF, count, countPerThread, iterIndex, useAbs);
 }
 
 __global__ void update_residual_kernel(float *r, float *b, float *x, int ni, int nj, int nk)
@@ -1334,7 +1345,11 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
     //cudaMemcpy(residual, div, bufferSize, cudaMemcpyDeviceToDevice);
     update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
     // first iterater, dir0 == -r0
-    mul_kernel<<<numBlocks, blocksize>>>(dir, residual, -1, number);
+    mul_kernel<<<numBlocks, blocksize>>>(dir, residual, 1, number);
+
+    {
+        calc_max_kernel<<<1, blocksize>>>(residual,  dotResult, number, (number + 255)/256, 2000);
+    }
 
     int coutPerThread = (numBlocks + 255)/256;
     float *dotResidual;
@@ -1366,6 +1381,10 @@ extern "C" void gpu_conjugate_gradient(float *u, float *v, float *w , float *div
         // step-3: calculate r(i+1)
         {
             update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
+        }
+
+        {
+            calc_max_kernel<<<1, blocksize>>>(residual,  dotResult, number, (number + 255)/256, 2001+i);
         }
 
         // step-4: calculate beta(i+1)
@@ -1617,32 +1636,41 @@ __global__ void prolongation_kernel(float *x, float *coarseX, int ni, int nj, in
 void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, double *temp0, double *tempResult, int levennum, int resultOffset)
 {
     int blocksize = 256;
-    double scale[LEVEL_COUNT] = {1.0,1.0,1.0,1.0,1.0};
+    double scale[6] = {1.0,1.0,1.0,1.0,1.0,1.0};
     
-    if (1)
+    if (0)
     {
-        scale[1] = 8.0;
+        scale[1] = scale[3] = scale[5] = 8.0;
 
         cudaMemset(levels[0].x, 0, levels[0].number*sizeof(double));
         cudaMemcpy(levels[0].b, residual, levels[0].number*sizeof(double), cudaMemcpyDeviceToDevice);
 
-        restriction_kernel<<<(levels[1].number + blocksize - 1) / blocksize, blocksize>>>(levels[0].b, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
+        //restriction_kernel<<<(levels[1].number + blocksize - 1) / blocksize, blocksize>>>(levels[0].b, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
 
-        for (int i = 1; i < levennum - 1; i++)
+        for (int i = 0; i < levennum - 1; i++)
         {
             int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
             int coarsenumBlocks = (levels[i+1].number + blocksize - 1) / blocksize;
 
-            cudaMemset(temp0, 0, levels[0].number*sizeof(double));
             cudaMemset(levels[i].x, 0, levels[i].number*sizeof(double));
-            smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 32);
+            if (i%2 == 1)
+            {
+                cudaMemset(temp0, 0, levels[0].number*sizeof(double));
+                smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 32);
 
-            update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
+                update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
+            }
+            else
+            {
+                cudaMemcpy(levels[i].r, levels[i].b, levels[i].number*sizeof(double), cudaMemcpyDeviceToDevice);
+            }
             restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
         }
     }
     else
     {
+        //scale[1] = scale[2] = scale[3] = scale[4] = scale[5] = 8.0;
+        scale[1] = 8.0;
         cudaMemcpy(levels[0].b, residual, levels[0].number*sizeof(double), cudaMemcpyDeviceToDevice);
 
         for (int i = 0; i < levennum - 1; i++)
@@ -1650,7 +1678,9 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
             int numBlocks = (levels[i].number + blocksize - 1) / blocksize;
             int coarsenumBlocks = (levels[i+1].number + blocksize - 1) / blocksize;
 
-            smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 4);
+            cudaMemset(temp0, 0, levels[0].number*sizeof(double));
+            cudaMemset(levels[i].x, 0, levels[i].number*sizeof(double));
+            smoothing_jacobi<double>(levels[i].x, levels[i].b, temp0, levels[i].alpha*scale[i], levels[i].beta, levels[i].ni, levels[i].nj, levels[i].nk, 32);
 
             update_residual_kernel<<<numBlocks, blocksize>>>(levels[i].r, levels[i].b, levels[i].x, levels[i].ni, levels[i].nj, levels[i].nk);
             restriction_kernel<<<coarsenumBlocks, blocksize>>>(levels[i].r, levels[i+1].b, levels[i].ni, levels[i].nj, levels[i].nk, levels[i+1].ni, levels[i+1].nj, levels[i+1].nk);
@@ -1682,12 +1712,15 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
     int numBlocks = (levels[0].number + 255)/256;
     int coarsenumBlocks = (levels[1].number + 255)/256;
 
+    double scale = 1.0;
+
     cudaMemset(levels[0].x, 0, levels[0].number*sizeof(double));
 
-    if (0)
+    if (1)
     {
+        scale = 8.0;
         cudaMemset(temp0, 0, levels[0].number*sizeof(double));
-        smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, levels[0].ni, levels[0].nj, levels[0].nk, 4);
+        smoothing_jacobi<double>(levels[0].x, residual, temp0, levels[0].alpha, levels[0].beta, levels[0].ni, levels[0].nj, levels[0].nk, 32);
     
         cudaMemset(levels[0].r, 0, levels[0].number*sizeof(double));
         update_residual_kernel<<<numBlocks, blocksize>>>(levels[0].r, residual, levels[0].x, levels[0].ni, levels[0].nj, levels[0].nk);
@@ -1695,12 +1728,14 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
     }
     else
     {
+        scale = 8.0;
+
         restriction_kernel<<<coarsenumBlocks, blocksize>>>(residual, levels[1].b, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
     }
 
     cudaMemset(temp0, 0, levels[0].number*sizeof(double));
     cudaMemset(levels[1].x, 0, levels[1].number*sizeof(double));
-    smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*8.0, levels[1].beta, levels[1].ni, levels[1].nj, levels[1].nk, 32);
+    smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*scale, levels[1].beta, levels[1].ni, levels[1].nj, levels[1].nk, 32);
 
     {
         update_residual_kernel<<<coarsenumBlocks, blocksize>>>(levels[1].r, levels[1].b, levels[1].x, levels[1].ni, levels[1].nj, levels[1].nk);
@@ -1714,7 +1749,7 @@ void V_Cycle(double *b, double *x, double *residual, SCoarseLevelInfo* levels, d
         cudaMemset(temp0, 0, levels[0].number*sizeof(double));
         prolongation_kernel<<<coarsenumBlocks, blocksize>>>(levels[1].x, levels[2].x, levels[1].ni, levels[1].nj, levels[1].nk, levels[2].ni, levels[2].nj, levels[2].nk);
         
-        smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*8.0, levels[1].beta, levels[1].ni, levels[1].nj, levels[1].nk, 4);
+        smoothing_jacobi<double>(levels[1].x, levels[1].b, temp0, levels[1].alpha*scale, levels[1].beta, levels[1].ni, levels[1].nj, levels[1].nk, 4);
     }
     
     prolongation_kernel<<<numBlocks, blocksize>>>(levels[0].x, levels[1].x, levels[0].ni, levels[0].nj, levels[0].nk, levels[1].ni, levels[1].nj, levels[1].nk);
@@ -1738,7 +1773,7 @@ extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w ,
     divergence_kernel<<<numBlocks, blocksize>>>(u, v, w, div, ni, nj, nk, halfrdx);
 
     int coutPerThread = (numBlocks + 255)/256;
-    cudaMemset(p, 0, number*sizeof(float));
+    cudaMemset(p, 0, number*sizeof(double));
     update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
     mul_kernel<<<numBlocks, blocksize>>>(dir, residual, 1, number);
 
@@ -1757,10 +1792,10 @@ extern "C" void gpu_multi_grid_conjugate_gradient(float *u, float *v, float *w ,
         smoothing_conjugate_gradient<double>(div, p, dir, residual, temp0, temp1, tempResult, resultOffset, ni, nj, nk, blocksize, number, numBlocks, coutPerThread);
 
         //V_Cycle(div, p, residual, levels, temp0, tempResult, i);
-        V_Cycle(div, p, residual, levels, temp0, tempResult, 3, i);
+        V_Cycle(div, p, residual, levels, temp0, tempResult, levelNum, i);
 
         {
-            calc_max_kernel<<<1, blocksize>>>(residual,  tempResult, number, (number + 255)/256, 2001+i);
+            calc_max_kernel<<<1, blocksize>>>(residual, tempResult, number, (number + 255)/256, 2001+i);
         }
 
         updateDir(div, p, residual, dir, temp0, tempResult, resultOffset, blocksize, number, numBlocks, coutPerThread);
@@ -1817,6 +1852,7 @@ extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div,
         update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p, ni, nj, nk);
         dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
         calc_sum_kernel<<<1, blocksize>>>(dotResidual, debugParam, numBlocks, coutPerThread, 0);
+        calc_max_kernel<<<1, blocksize>>>(residual, debugParam, number, (number + 255)/256, 2000);
     }
 
     float *p_in = p;
@@ -1829,6 +1865,7 @@ extern "C" void gpu_projection_jacobi(float *u, float *v, float *w , float *div,
             update_residual_kernel<<<numBlocks, blocksize>>>(residual, div, p_out, ni, nj, nk);
             dot_vector_kernel<<<numBlocks, blocksize>>>(residual, residual, dotResidual, number);
             calc_sum_kernel<<<1, blocksize>>>(dotResidual, debugParam, numBlocks, coutPerThread, i+1);
+            calc_max_kernel<<<1, blocksize>>>(residual, debugParam, number, (number + 255)/256, 2001+i);
         }
 
         // swap

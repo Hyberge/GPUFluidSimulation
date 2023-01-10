@@ -11,7 +11,7 @@
 #include "../include/fluid_buffer3D.h"
 #include <tbb/tbb.h>
 
-#define LEVEL_COUNT 5
+#define LEVEL_COUNT 6
 struct SCoarseLevelInfo
 {
     int ni, nj, nk;
@@ -305,7 +305,7 @@ public:
             cout << "cuda Error: " << ret << endl << "  " << cudaGetErrorString(ret) << endl;
     }
 
-    void copyDeviceToHost(double *host_field, double *device_field, size_t size)
+    void copyDeviceToHost(void *host_field, void *device_field, size_t size)
     {
          cudaError_t ret = cudaMemcpy(host_field, device_field, size, cudaMemcpyDeviceToHost);
          if (ret != cudaSuccess)
